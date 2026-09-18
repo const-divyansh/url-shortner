@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: urlshortener-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-urlshortener}
+      POSTGRES_USER: ${DB_USER:-urlshortener}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-urlshortener} -d ${DB_NAME:-urlshortener}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  # Postgres is the source of truth (NFR9) - must survive container restarts.
+  postgres-data:
+  # Redis is a disposable cache, but M4 also buffers click events here, so the
+  # volume avoids losing buffered analytics on restart. Safe to delete at any time.
+  redis-data:

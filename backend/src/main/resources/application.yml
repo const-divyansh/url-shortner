@@ -1,0 +1,114 @@
+spring:
+  application:
+    name: url-shortener
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:urlshortener}
+    username: ${DB_USER:urlshortener}
+    # Dev-only fallback that matches the docker-compose default. Production supplies
+    # DB_PASSWORD via the environment (M8 prod overlay defines no default).
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      # schema.sql owns the schema; Hibernate only verifies entities match it.
+      # Never set this to `update` - it silently diverges from the committed DDL.
+      ddl-auto: validate
+    open-in-view: false
+
+  sql:
+    init:
+      # `always` because the default (`embedded`) skips initialisation for a real
+      # PostgreSQL instance. schema.sql is idempotent, so re-running is safe.
+      #
+      # Do NOT set spring.jpa.defer-datasource-initialization=true here: that delays
+      # these scripts until after Hibernate starts, so `ddl-auto: validate` would run
+      # against an empty database and fail. Spring Boot already orders the script
+      # initializer before the EntityManagerFactory by default.
+      mode: always
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+
+  cors:
+    # Origins permitted to call /api/** from a browser. Comma-separated.
+    # Never "*": any site could then script requests against this API using a
+    # visitor's browser. Default is the Vite dev server.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  auth:
+    # One active request authenticator selected by name. It only validates our own
+    # opaque session token - both guest and Google logins mint the same kind of token,
+    # so this never needs to change when a new login provider is added.
+    provider: ${AUTH_PROVIDER:session-token}
+
+  oauth:
+    google:
+      # Google Cloud Console OAuth client credentials. No default: the app should fail
+      # fast rather than silently run with an empty client id/secret.
+      client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+      client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+      # Must exactly match an authorized redirect URI configured on the Google client.
+      redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:http://localhost:8080/api/auth/google/callback}
+      # Where the browser lands after login, with the session token in the URL
+      # fragment (never sent to the server, unlike a query parameter).
+      frontend-redirect-uri: ${GOOGLE_OAUTH_FRONTEND_REDIRECT_URI:http://localhost:5173/}
+
+  shortcode:
+    # Active generation strategy. Switchable at runtime via ShortCodeGeneratorFactory.
+    # Available: base62-random (default, unpredictable) | hash-url (deterministic, ADR-007).
+    strategy: ${SHORTCODE_STRATEGY:base62-random}
+
+  analytics:
+    # Secret mixed into the client-IP hash so stored hashes cannot be reversed by
+    # precomputing every possible address (only ~4.3 billion exist). This is a pepper,
+    # not a salt: one secret for all records, so repeat visitors hash consistently.
+    #
+    # It MUST come from the environment and must never be stored in the database -
+    # keeping it beside the hashes would hand an attacker both halves at once. The dev
+    # default below is a known, non-secret value for local runs only; M8's prod overlay
+    # must define no default so a missing value fails startup.
+    ip-pepper: ${ANALYTICS_IP_PEPPER:dev-only-not-a-secret}
+
+    # Addresses whose X-Forwarded-For header is believed. Empty means trust nobody and
+    # always use the socket address - the correct default, since any client can forge
+    # that header and would otherwise be able to fake its own identity.
+    trusted-proxies: ${ANALYTICS_TRUSTED_PROXIES:}
+
+    # Redis list holding clicks awaiting persistence. Versioned so a future change to
+    # the serialised shape can move to a new key rather than meeting records it cannot
+    # read. Bumped to v2 when ownerId was added to ClickRecord (broadcast-after-persist
+    # fix).
+    queue-key: ${ANALYTICS_QUEUE_KEY:clicks:v2}
+
+    # Clicks moved from Redis to PostgreSQL per drain.
+    batch-size: ${ANALYTICS_BATCH_SIZE:200}
+
+    # Delay between drains, measured from the end of the previous run. Kept short so the
+    # dashboard counter feels near-real-time; still batched, so this is a poll frequency
+    # trade-off (more Redis round trips), not a correctness one.
+    drain-interval-ms: ${ANALYTICS_DRAIN_INTERVAL_MS:200}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      # Component detail (db, redis) is required to verify M1 wiring locally.
+      # Prod overlay should set this to never/when-authorized.
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:always}
+
+logging:
+  level:
+    com.urlshortener: ${LOG_LEVEL:INFO}
