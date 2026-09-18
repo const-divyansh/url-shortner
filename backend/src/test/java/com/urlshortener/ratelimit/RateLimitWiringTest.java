@@ -41,10 +41,10 @@ import com.urlshortener.event.IpHasher;
 @EnableConfigurationProperties(RateLimitProperties.class)
 @TestPropertySource(properties = {
         "app.ratelimit.enabled=true",
-        "app.ratelimit.create.limit=20",
-        "app.ratelimit.create.window=1m",
-        "app.ratelimit.redirect.limit=300",
-        "app.ratelimit.redirect.window=1m"
+        "app.ratelimit.budgets.create.limit=20",
+        "app.ratelimit.budgets.create.window=1m",
+        "app.ratelimit.budgets.redirect.limit=300",
+        "app.ratelimit.budgets.redirect.window=1m"
 })
 class RateLimitWiringTest {
 

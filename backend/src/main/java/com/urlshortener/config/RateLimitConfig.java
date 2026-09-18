@@ -34,9 +34,7 @@ public class RateLimitConfig {
             return new NoOpRateLimiter();
         }
 
-        log.info("Rate limiting enabled - create: {}/{}, redirect: {}/{}",
-                properties.create().limit(), properties.create().window(),
-                properties.redirect().limit(), properties.redirect().window());
+        log.info("Rate limiting enabled - budgets: {}", properties.budgets());
 
         return new RedisRateLimiter(redis, properties);
     }

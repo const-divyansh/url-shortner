@@ -65,7 +65,7 @@ public class RedisRateLimiter implements RateLimiter {
             return RateLimitDecision.allow();
         }
 
-        Budget budget = budgetFor(scope);
+        Budget budget = properties.budgetFor(scope);
         Instant now = Instant.now();
         long windowSeconds = budget.window().toSeconds();
         // Aligning to a wall-clock slot is what lets the key encode the window, so the
@@ -104,13 +104,6 @@ public class RedisRateLimiter implements RateLimiter {
         }
 
         return RateLimitDecision.reject(retryAfter(now, windowIndex, windowSeconds));
-    }
-
-    private Budget budgetFor(RateLimitScope scope) {
-        return switch (scope) {
-            case CREATE -> properties.create();
-            case REDIRECT -> properties.redirect();
-        };
     }
 
     /**

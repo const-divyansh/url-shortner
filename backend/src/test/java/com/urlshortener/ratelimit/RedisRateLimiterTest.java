@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,8 +45,9 @@ class RedisRateLimiterTest {
 
         limiter = new RedisRateLimiter(redis, new RateLimitProperties(
                 true,
-                new Budget(3, Duration.ofMinutes(1)),
-                new Budget(10, Duration.ofMinutes(1))));
+                Map.of(
+                        RateLimitScope.CREATE, new Budget(3, Duration.ofMinutes(1)),
+                        RateLimitScope.REDIRECT, new Budget(10, Duration.ofMinutes(1)))));
     }
 
     private void countReturns(long value) {

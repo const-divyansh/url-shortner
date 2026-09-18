@@ -1,8 +1,12 @@
 package com.urlshortener.config;
 
 import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import com.urlshortener.ratelimit.RateLimitScope;
 
 /**
  * Rate limiting settings.
@@ -12,27 +16,46 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * require a rebuild. A limit set too low is a self-inflicted outage, so it must be
  * adjustable at the speed of a restart.
  *
- * @param enabled  master switch. When false a no-op limiter is wired in instead, so
- *                 nothing on the hot path consults Redis at all - the off state costs
- *                 nothing rather than costing a skipped branch
- * @param create   budget for link creation
- * @param redirect budget for the redirect hot path
+ * <p><strong>Open/Closed on the scope axis.</strong> Budgets are held in a map keyed by
+ * {@link RateLimitScope} rather than one named field per scope. Adding a new limited
+ * endpoint is then an enum value plus one new {@code app.ratelimit.budgets.<scope>} key
+ * - this class does not change. The previous shape (separate {@code create}/
+ * {@code redirect} fields, mirrored by a {@code switch} in {@code RedisRateLimiter})
+ * meant a third scope needed three existing files edited, which is exactly the
+ * violation an enum-keyed map removes.
+ *
+ * @param enabled master switch. When false a no-op limiter is wired in instead, so
+ *                nothing on the hot path consults Redis at all - the off state costs
+ *                nothing rather than costing a skipped branch
+ * @param budgets one budget per {@link RateLimitScope}, keyed by its lower-cased name
+ *                (e.g. {@code app.ratelimit.budgets.create.limit})
  */
 @ConfigurationProperties(prefix = "app.ratelimit")
-public record RateLimitProperties(boolean enabled, Budget create, Budget redirect) {
-
-    /**
-     * Defaults chosen to be generous enough that no legitimate user meets them, because
-     * the first version of a limit should only catch abuse. Tightening later is safe;
-     * shipping too tight means real users hit 429s and the feature gets switched off
-     * wholesale rather than tuned.
-     */
-    private static final Budget DEFAULT_CREATE = new Budget(20, Duration.ofMinutes(1));
-    private static final Budget DEFAULT_REDIRECT = new Budget(300, Duration.ofMinutes(1));
+public record RateLimitProperties(boolean enabled, Map<RateLimitScope, Budget> budgets) {
 
     public RateLimitProperties {
-        create = create == null ? DEFAULT_CREATE : create;
-        redirect = redirect == null ? DEFAULT_REDIRECT : redirect;
+        budgets = budgets == null || budgets.isEmpty() ? Map.of() : new EnumMap<>(budgets);
+    }
+
+    /**
+     * The budget configured for {@code scope}.
+     *
+     * <p>No per-scope branch lives here or in the caller - this is the one place a
+     * missing scope is noticed, and it fails loudly rather than silently limiting to
+     * nothing.
+     *
+     * @throws IllegalStateException if {@code scope} has no configured budget. Deferred
+     *         to first use (not the constructor) so tests and the disabled path never
+     *         need to supply a full map; the moment it matters is exactly when
+     *         {@link com.urlshortener.ratelimit.RedisRateLimiter} tries to charge it.
+     */
+    public Budget budgetFor(RateLimitScope scope) {
+        Budget budget = budgets.get(scope);
+        if (budget == null) {
+            throw new IllegalStateException("No rate limit budget configured for scope " + scope
+                    + " (expected app.ratelimit.budgets." + scope.name().toLowerCase() + ".limit and .window)");
+        }
+        return budget;
     }
 
     /**
