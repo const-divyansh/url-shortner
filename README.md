@@ -166,8 +166,10 @@ authenticate each request.
 
 ## 📖 Further Documentation
 
-For detailed architectural decisions, requirements breakdown, and engineering roadmap, consult the [docs/](file:///Users/divyanshgoswami/url-shortner/docs) directory:
+For detailed architectural decisions, requirements breakdown, and engineering roadmap, consult the [docs/](./docs) directory:
 
-* [Requirements & Phase Plan](file:///Users/divyanshgoswami/url-shortner/docs/requirements.md)
-* [Implementation Plan & Milestones](file:///Users/divyanshgoswami/url-shortner/docs/plan.md)
-* [Architectural Decision Records (ADRs)](file:///Users/divyanshgoswami/url-shortner/docs/decisions.md)
+* [Q&A — start here](./docs/qa/00-overview.md)
+* [AI-Assisted Engineering Process](./docs/process/README.md)
+* [Requirements & Phase Plan](./docs/requirements.md)
+* [Implementation Plan & Milestones](./docs/plan.md)
+* [Architectural Decision Records (ADRs)](./docs/decisions.md)

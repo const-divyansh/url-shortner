@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ApiError, fetchAnalytics, fetchOwnedUrls, subscribeToClickEvents } from '../api'
+import { ApiError, deleteUrl, fetchAnalytics, fetchOwnedUrls, subscribeToClickEvents } from '../api'
 import { ANALYTICS_PAGE_SIZE, COPY_FEEDBACK_MS } from '../config'
 import { formatInstant, formatReferrer, formatUserAgent } from '../format'
 import { strings } from '../strings'
@@ -39,6 +39,10 @@ export function AnalyticsView({ initialShortCode }: Props) {
   // since only one click can be in flight at a time, and it doubles as the trigger
   // for the reveal-then-clear timer below.
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  // Which row is asking "are you sure?" - a single slot, since confirming one
+  // delete implicitly means any other row's pending confirmation is stale.
+  const [confirmingDeleteCode, setConfirmingDeleteCode] = useState<string | null>(null)
+  const [deletingCode, setDeletingCode] = useState<string | null>(null)
 
   // Clears the "Copied" confirmation after a moment, same contract as the copy
   // button on the create screen: without cleanup, unmounting mid-timeout would leave
@@ -108,6 +112,29 @@ export function AnalyticsView({ initialShortCode }: Props) {
       // Same secure-context caveat as the create screen's copy button - reported
       // rather than silently doing nothing.
       setOwnedLinksError(strings.create.copyFailed)
+    }
+  }
+
+  // Two clicks, not one: deletion is irreversible server-side (a soft-deleted link
+  // never comes back through this UI), so a single stray click must not be able to
+  // remove a link the user is actively sharing.
+  async function handleConfirmDelete(shortCode: string) {
+    setDeletingCode(shortCode)
+    setOwnedLinksError(null)
+
+    try {
+      await deleteUrl(shortCode)
+      setOwnedLinks((current) => current.filter((link) => link.shortCode !== shortCode))
+      // The detail panel below would otherwise keep showing a now-gone link's stats.
+      if (activeCode === shortCode) {
+        setData(null)
+        setActiveCode('')
+      }
+    } catch (caught) {
+      setOwnedLinksError(caught instanceof ApiError ? caught.message : strings.analytics.deleteFailed)
+    } finally {
+      setConfirmingDeleteCode(null)
+      setDeletingCode(null)
     }
   }
 
@@ -263,6 +290,40 @@ export function AnalyticsView({ initialShortCode }: Props) {
                   >
                     {copiedCode === link.shortCode ? strings.create.copied : strings.create.copy}
                   </button>
+
+                  {confirmingDeleteCode === link.shortCode ? (
+                    <span className="owned-link-delete-confirm">
+                      <span className="owned-link-delete-prompt">
+                        {strings.analytics.deleteConfirming}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => void handleConfirmDelete(link.shortCode)}
+                        disabled={deletingCode === link.shortCode}
+                      >
+                        {deletingCode === link.shortCode
+                          ? strings.analytics.deleting
+                          : strings.analytics.deleteConfirm}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setConfirmingDeleteCode(null)}
+                        disabled={deletingCode === link.shortCode}
+                      >
+                        {strings.analytics.deleteCancel}
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={() => setConfirmingDeleteCode(link.shortCode)}
+                    >
+                      {strings.analytics.delete}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

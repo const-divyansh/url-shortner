@@ -62,6 +62,15 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("code.expired", e.getMessage()));
     }
 
+    @ExceptionHandler(ShortCodeDeletedException.class)
+    public ResponseEntity<ErrorResponse> handleDeleted(ShortCodeDeletedException e) {
+        // Also 410: same "existed, now permanently finished" contract as expiry, just
+        // a different cause - kept as a distinct exception/code so logs and API
+        // consumers can tell the two apart.
+        return ResponseEntity.status(HttpStatus.GONE)
+                .body(ErrorResponse.of("code.deleted", e.getMessage()));
+    }
+
     /**
      * Unparseable body, or a field of the wrong type - for example a malformed
      * {@code expiresAt}.

@@ -51,6 +51,9 @@ public class Url {
     @Column(name = "owner_id", updatable = false)
     private Long ownerId;
 
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
     protected Url() {
         // Required by JPA.
     }
@@ -76,6 +79,19 @@ public class Url {
      */
     public boolean isExpiredAt(Instant now) {
         return expiresAt != null && !now.isBefore(expiresAt);
+    }
+
+    /**
+     * Soft-deletes this link. Idempotent by nature - calling it again on an
+     * already-deleted link is a no-op, not an error; the service layer decides whether
+     * a repeat call should surface as "not found".
+     */
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public boolean isActive() {
+        return active;
     }
 
     public Long getId() {

@@ -41,7 +41,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
             )
             from Url u
             left join ClickEvent c on c.urlId = u.id
-            where u.ownerId = :ownerId
+            where u.ownerId = :ownerId and u.active = true
             group by u.id, u.shortCode, u.targetUrl, u.createdAt, u.expiresAt
             order by u.createdAt desc
             """)

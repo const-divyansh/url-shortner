@@ -29,6 +29,7 @@ const paths = {
   googleLoginStart: () => '/api/auth/google/start',
   createUrl: () => '/api/urls',
   ownedUrls: () => '/api/urls',
+  deleteUrl: (shortCode: string) => `/api/urls/${encodeURIComponent(shortCode)}`,
   strategy: () => '/api/shortcode/strategy',
   analytics: (shortCode: string) =>
     `/api/urls/${encodeURIComponent(shortCode)}/analytics`,
@@ -262,6 +263,17 @@ export function fetchAnalytics(
  */
 export function fetchOwnedUrls(): Promise<OwnedUrlSummary[]> {
   return request<OwnedUrlSummary[]>(paths.ownedUrls(), {}, 'required')
+}
+
+/**
+ * Deletes (soft-deletes, server-side) one of the caller's own links.
+ *
+ * The backend responds 204 with no body, so this resolves to nothing on success;
+ * failure - not the owner, already gone, never existed - surfaces as an
+ * {@link ApiError} for the caller to show.
+ */
+export function deleteUrl(shortCode: string): Promise<void> {
+  return request<void>(paths.deleteUrl(shortCode), { method: 'DELETE' }, 'required')
 }
 
 /**

@@ -4,7 +4,9 @@ import java.net.URI;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -64,6 +66,20 @@ public class UrlController {
     @GetMapping
     public List<OwnedUrlSummaryResponse> listOwned(@AuthenticatedOwner AuthenticatedPrincipal principal) {
         return analyticsService.listOwnedLinks(principal.ownerId());
+    }
+
+    /**
+     * Soft-deletes one of the caller's own links.
+     *
+     * <p>204, not 200: there is no representation to return, and the request is
+     * idempotent from the caller's point of view (repeating it after success reports
+     * 404, which is correct - it is already gone).
+     */
+    @DeleteMapping("/{shortCode}")
+    public ResponseEntity<Void> delete(@AuthenticatedOwner AuthenticatedPrincipal principal,
+                                        @PathVariable String shortCode) {
+        urlService.delete(shortCode, principal);
+        return ResponseEntity.noContent().build();
     }
 }
 

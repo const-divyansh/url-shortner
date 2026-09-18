@@ -13,6 +13,8 @@ import com.urlshortener.auth.AuthenticatedPrincipal;
 import com.urlshortener.entity.Url;
 import com.urlshortener.exception.AliasUnavailableException;
 import com.urlshortener.exception.CodeGenerationException;
+import com.urlshortener.exception.OwnershipForbiddenException;
+import com.urlshortener.exception.ShortCodeDeletedException;
 import com.urlshortener.exception.ShortCodeExpiredException;
 import com.urlshortener.exception.ShortCodeNotFoundException;
 import com.urlshortener.generator.GenerationContext;
@@ -140,14 +142,45 @@ public class UrlService {
      *
      * @throws ShortCodeNotFoundException if no such code exists (404)
      * @throws ShortCodeExpiredException  if the code existed but has expired (410)
+     * @throws ShortCodeDeletedException  if the owner deleted the code (410)
      */
     public Url resolve(String shortCode) {
         Optional<Url> found = repository.findByShortCode(shortCode);
         Url url = found.orElseThrow(() -> new ShortCodeNotFoundException(shortCode));
 
+        if (!url.isActive()) {
+            throw new ShortCodeDeletedException(shortCode);
+        }
         if (url.isExpiredAt(clock.instant())) {
             throw new ShortCodeExpiredException(shortCode);
         }
         return url;
+    }
+
+    /**
+     * Soft-deletes a link on behalf of its owner.
+     *
+     * <p>Soft, never a real {@code DELETE}: removing the row would let the short code
+     * be reissued later, letting an attacker hijack a link already shared and in
+     * circulation, and would strip {@code click_events} of a valid owner reference.
+     *
+     * @throws ShortCodeNotFoundException  if no such code exists, or it was already
+     *                                     deleted - the caller cannot distinguish
+     *                                     "never existed" from "already gone", which is
+     *                                     the same non-information a stranger would see
+     * @throws OwnershipForbiddenException if the code exists but belongs to someone else
+     */
+    public void delete(String shortCode, AuthenticatedPrincipal principal) {
+        Url url = repository.findByShortCode(shortCode)
+                .orElseThrow(() -> new ShortCodeNotFoundException(shortCode));
+
+        if (url.getOwnerId() == null || !url.getOwnerId().equals(principal.ownerId())) {
+            throw new OwnershipForbiddenException("You do not have access to this link.");
+        }
+        if (!url.isActive()) {
+            throw new ShortCodeNotFoundException(shortCode);
+        }
+        url.deactivate();
+        repository.save(url);
     }
 }

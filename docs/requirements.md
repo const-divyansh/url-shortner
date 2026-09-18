@@ -32,23 +32,34 @@ and why; [plan.md](./plan.md) owns milestones and delivery status.
 - NFR8: Data privacy - no raw client IPs persisted, hash/truncate
 - NFR9: Durability - Postgres source of truth, Redis disposable cache
 
-## Phase 2 scope 
-Deliberately sequenced after the core, not cut. Both items below ship together because
-one depends on the other.
+## Phase 1 — delivered
+Core service plus security. **Authentication is done, not deferred**: every
+create/manage/analytics endpoint now has a real ownership boundary — Google OAuth
+("Sign in with Google") or guest login, both minting the same DB-backed session token
+([ADR-005](./decisions.md#adr-005--authentication), M6 in [plan.md](./plan.md)). Auth
+was originally scoped as Phase 2 alongside deletion, then pulled forward and delivered
+early because deletion needs the ownership boundary auth provides, not the reverse.
 
-### Authentication + link deletion
+## Phase 2 scope — caching + link deletion
+What remains, now that auth exists to gate it. Deliberately sequenced after the core,
+not cut.
+
+### Caching
+- Redis cache-aside in front of the redirect lookup, with graceful fallback to
+  Postgres if Redis is unavailable (NFR1, NFR3, NFR9). See M3 in
+  [plan.md](./plan.md).
+
+### Link deletion
 - **Deletion**: soft delete (`is_active = false`) so a link stops resolving → 410 Gone.
-- **Authentication**: API-key ownership boundary
-  ([ADR-005](./decisions.md#adr-005--authentication)).
-- **Why together**: deletion without an ownership boundary lets anyone remove anyone's
-  link. Deletion is gated on auth by necessity, not by effort — so they are one unit of
-  work, not two.
+- **Now unblocked**: deletion without an ownership boundary would let anyone remove
+  anyone's link — that boundary now exists (Phase 1, above), so deletion can proceed
+  safely.
 - **Constraint when added**: soft delete only. Retaining the row permanently retires the
   short code — reusing it would let an attacker hijack links already in circulation and
   would corrupt historical click attribution.
 - **Known cost**: deletion is an external *event*, so it requires cache invalidation and
   inherits the cache-aside repopulation race (a concurrent reader can write a stale
-  entry after the eviction). Bounded TTL is the backstop.
+  entry after the eviction). Bounded TTL from caching is the backstop.
 
 ## Design constraints
 Carried from day one so Phase 2 stays additive rather than a rewrite.

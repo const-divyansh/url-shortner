@@ -43,8 +43,11 @@ public class CorsConfig {
         config.setAllowedOrigins(List.of(allowedOrigins.split("\\s*,\\s*")));
 
         // Only what the two screens use. POST covers creation, GET covers analytics,
-        // PUT covers switching the active short-code strategy.
-        config.setAllowedMethods(List.of("GET", "POST", "PUT"));
+        // PUT covers switching the active short-code strategy, DELETE covers removing
+        // an owned link. Omitting a method here is not a no-op: the browser's preflight
+        // fails and the request never reaches the server, surfacing as an unexplained
+        // transport error rather than an HTTP status.
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
 
         // Content-Type is required for JSON request bodies. Authorization carries the
         // bearer session token on protected requests.

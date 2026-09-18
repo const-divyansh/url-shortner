@@ -111,6 +111,12 @@ export const strings = {
     next: 'Next',
     pagePosition: (page: number) => `Page ${page + 1}`,
     refresh: 'Refresh',
+    delete: 'Delete',
+    deleteConfirming: 'Delete this link?',
+    deleteConfirm: 'Yes, delete',
+    deleteCancel: 'Cancel',
+    deleting: 'Deleting…',
+    deleteFailed: 'Could not delete this link. Please try again.',
   },
 
   errors: {

@@ -28,6 +28,8 @@ import com.urlshortener.dto.CreateUrlRequest;
 import com.urlshortener.entity.Url;
 import com.urlshortener.exception.AliasUnavailableException;
 import com.urlshortener.exception.CodeGenerationException;
+import com.urlshortener.exception.OwnershipForbiddenException;
+import com.urlshortener.exception.ShortCodeDeletedException;
 import com.urlshortener.exception.ShortCodeExpiredException;
 import com.urlshortener.exception.ShortCodeNotFoundException;
 import com.urlshortener.exception.ValidationException;
@@ -268,5 +270,75 @@ class UrlServiceTest {
         when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(live));
 
         assertThat(service.resolve("abc1234").getShortCode()).isEqualTo("abc1234");
+    }
+
+    @Test
+    @DisplayName("a deleted code is gone, distinct from expired - the owner acted, not the clock")
+    void deletedCodeIsGone() {
+        Url deleted = new Url("abc1234", TARGET, null);
+        deleted.deactivate();
+        when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(deleted));
+
+        assertThatThrownBy(() -> service.resolve("abc1234"))
+                .isInstanceOf(ShortCodeDeletedException.class);
+    }
+
+    // --- deletion --------------------------------------------------------------------
+
+    @Test
+    @DisplayName("owner can delete their own link")
+    void ownerCanDeleteTheirOwnLink() {
+        Url url = new Url("abc1234", TARGET, null, OWNER.ownerId());
+        when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(url));
+
+        service.delete("abc1234", OWNER);
+
+        assertThat(url.isActive()).isFalse();
+        verify(repository).save(url);
+    }
+
+    @Test
+    @DisplayName("deleting someone else's link is forbidden, not silently ignored")
+    void deletingSomeoneElsesLinkIsForbidden() {
+        Url url = new Url("abc1234", TARGET, null, 999L);
+        when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(url));
+
+        assertThatThrownBy(() -> service.delete("abc1234", OWNER))
+                .isInstanceOf(OwnershipForbiddenException.class);
+
+        assertThat(url.isActive()).isTrue();
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("deleting an unowned (pre-auth) link is forbidden, not silently allowed")
+    void deletingLinkWithNoOwnerIsForbidden() {
+        Url url = new Url("abc1234", TARGET, null);
+        when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(url));
+
+        assertThatThrownBy(() -> service.delete("abc1234", OWNER))
+                .isInstanceOf(OwnershipForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("deleting an unknown code is not found")
+    void deletingUnknownCodeIsNotFound() {
+        when(repository.findByShortCode("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.delete("missing", OWNER))
+                .isInstanceOf(ShortCodeNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("deleting an already-deleted code reports not found, not forbidden or a no-op success")
+    void deletingAlreadyDeletedCodeIsNotFound() {
+        Url url = new Url("abc1234", TARGET, null, OWNER.ownerId());
+        url.deactivate();
+        when(repository.findByShortCode("abc1234")).thenReturn(Optional.of(url));
+
+        assertThatThrownBy(() -> service.delete("abc1234", OWNER))
+                .isInstanceOf(ShortCodeNotFoundException.class);
+
+        verify(repository, never()).save(any());
     }
 }

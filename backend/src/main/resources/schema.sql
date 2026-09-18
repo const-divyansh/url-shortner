@@ -86,6 +86,13 @@ ALTER TABLE urls
 CREATE INDEX IF NOT EXISTS idx_urls_owner_created
     ON urls (owner_id, created_at DESC);
 
+-- Soft delete (M6, Phase 2). A link is never hard-deleted: the row is kept so its
+-- short code can never be reissued (reuse would let an attacker hijack a link already
+-- in circulation) and so past click_events rows keep a valid owner attribution.
+-- Deletion is therefore this flag flipping to false, not a DELETE statement.
+ALTER TABLE urls
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
 -- No explicit index on short_code: PostgreSQL implements UNIQUE with a B-tree index,
 -- so urls_short_code_key already serves the redirect lookup, which is the hot path.
 

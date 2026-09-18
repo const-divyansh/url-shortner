@@ -71,7 +71,7 @@ as each milestone is worked, per the working-mode rule in
   - **Deferred to M7**: controller-level (MockMvc) and Testcontainers integration tests. M2 covers unit tests
     plus a manual end-to-end pass.
 
-### M3 — Caching
+### M3 — Caching — *Phase 2*
 **Status: Deferred** *(depends on M2)* — resequenced after M4, see note below
 - **Closes**: NFR1, NFR3, NFR9
 - **Decisions**: Redis cache-aside in front of the redirect lookup; on cache miss or Redis outage,
@@ -141,9 +141,9 @@ real: analytics publishes an event on redirect and writes asynchronously to Post
 - **Verify**: burst requests → 429 past threshold; no raw IP in DB; Redis stopped → redirect still works
 
 ### M6 — Auth + Link Deletion — *Phase 2*
-**Status: In Progress** *(depends on M2, M4 — see [ADR-005](./decisions.md#adr-005--authentication))*
+**Status: Done** *(depends on M2, M4 — see [ADR-005](./decisions.md#adr-005--authentication))*
 - **Closes**: NFR4 (ownership boundary), plus link deletion — see
-  [Phase 2 scope](./requirements.md#phase-2-scope-planned-not-rejected)
+  [Phase 2 scope](./requirements.md#phase-2-scope--caching--link-deletion)
 - **Scoped as one unit**: deletion without an ownership boundary lets anyone remove anyone's link, so
   auth and delete ship together rather than as separate milestones.
 - **Proposed decisions**: lightweight API-Key auth (`X-Api-Key` header, hashed key storage); redirect
@@ -158,8 +158,9 @@ real: analytics publishes an event on redirect and writes asynchronously to Post
   provider, `POST /api/auth/keys` bootstrap, authenticated `POST /api/urls`, authenticated
   `GET /api/urls/{code}/analytics`, and authenticated `GET /api/urls` to list a caller's earlier links so
   old analytics can be reopened without retyping short codes.
-- **Still open in M6**: link deletion is not implemented yet, and the current ownership model is not retroactive
-  for links created before auth existed.
+- **Still open in M6**: ~~link deletion is not implemented yet~~ — see **completed below**. The
+  current ownership model remains non-retroactive for links created before auth existed (those
+  links have no owner and cannot be deleted through this endpoint; deferred, no reported need).
 - **Added alongside** *(2026-09-18)*: `GET`/`PUT /api/shortcode/strategy` exposes and switches the active
   generation strategy (ADR-007), surfaced in the frontend so the algorithm is visible rather than invisible
   server state. Both routes require a key.
@@ -207,6 +208,31 @@ real: analytics publishes an event on redirect and writes asynchronously to Post
     the user copy each row's full short URL, built via a `AppProperties.baseUrl()`-aware
     `OwnedUrlSummaryResponse.from(projection, baseUrl)` factory (mirrors `CreateUrlResponse.from`), since
     the JPQL projection has no access to that runtime config value.
+- **Link deletion completed** *(2026-09-19)*: `DELETE /api/urls/{code}`, owner-only, **soft**
+  (`urls.is_active = false`) — never a hard delete, so the short code can never be reissued
+  (hijack prevention) and `click_events` keeps a valid, historically-accurate owner reference.
+  - **Entity**: `Url.active` defaults `true` at the field declaration, not in a constructor —
+    Hibernate inserts whatever the Java field holds, so relying on the column's `DEFAULT true`
+    alone would have inserted every new link already deleted.
+  - **Resolution**: `UrlService.resolve()` now checks `isActive()` before the existing expiry
+    check and throws the new `ShortCodeDeletedException` (410, `code.deleted`) — kept distinct
+    from `ShortCodeExpiredException` (410, `code.expired`) even though both map to the same
+    status, so logs and API consumers can tell "the owner removed this" from "this timed out".
+  - **Idempotence/leak-avoidance**: deleting an already-deleted or unowned link responds 404
+    (`ShortCodeNotFoundException`), the same response a stranger gets for a code that never
+    existed — deliberately not a distinct "already gone" response, so repeated delete calls or
+    probing cannot distinguish those two states.
+  - **Ownership**: mismatched owner responds 403 (`OwnershipForbiddenException`), reusing the
+    same check style as `AnalyticsService` (duplicated rather than extracted to a shared
+    helper — two call sites, matching the codebase's existing per-service scoping convention).
+  - **List**: `findOwnedSummaries` now filters `active = true`, so "Your links" drops a link the
+    moment it is deleted.
+  - **No cache-invalidation risk yet**: M3 (caching) is still not built, so the ADR-flagged
+    cache-aside race on delete does not apply yet — must be revisited once M3 lands.
+  - **Verified**: `UrlServiceTest` covers resolve-of-deleted (410), successful delete, forbidden
+    (wrong owner, no owner), not-found (unknown code, already-deleted code); `mvn -o test` green;
+    frontend `tsc`/`oxlint` clean; manual create → delete → 410-on-redirect → absent from
+    "Your links" confirmed end-to-end.
 
 ### M7 — Tests
 **Status: Not Started** *(depends on M2–M6)*

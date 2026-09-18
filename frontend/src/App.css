@@ -392,6 +392,33 @@ button {
   outline-offset: 2px;
 }
 
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0.8rem 1.2rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger, #dc2626);
+  background: rgba(220, 38, 38, 0.06);
+  color: var(--danger, #dc2626);
+  font-size: 0.94rem;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger, #dc2626);
+  color: #fff;
+}
+
+.btn-danger:focus-visible {
+  outline: 2px solid rgba(220, 38, 38, 0.45);
+  outline-offset: 2px;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -627,6 +654,24 @@ button:disabled {
   font-family: var(--mono);
   font-size: 0.84rem;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owned-link-shorturl .btn-danger,
+.owned-link-shorturl .btn-secondary {
+  margin-left: auto;
+}
+
+.owned-link-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.owned-link-delete-prompt {
+  color: var(--text-muted);
+  font-size: 0.82rem;
   white-space: nowrap;
 }
 
