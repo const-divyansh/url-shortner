@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Maps exceptions to HTTP responses in one place.
@@ -116,6 +117,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of("code.generation_failed",
                         "Could not allocate a short code, please retry"));
+    }
+
+    /**
+     * A request for a static resource that does not exist - most commonly a
+     * browser's unconditional {@code /favicon.ico} request. Routine, not a
+     * defect, so it is answered with a plain 404 and no stack trace, rather than
+     * falling into the catch-all below and being reported as a 500.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoStaticResource(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("resource.not_found", "No such resource"));
     }
 
     /**

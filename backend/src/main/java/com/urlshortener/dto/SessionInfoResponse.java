@@ -17,5 +17,9 @@ package com.urlshortener.dto;
  *                 leaving the client to compare {@code provider} against a literal, so
  *                 adding a third provider later does not silently promote guests
  */
-public record SessionInfoResponse(String provider, boolean guest) {
+public record SessionInfoResponse(
+        @io.swagger.v3.oas.annotations.media.Schema(example = "google")
+        String provider,
+        @io.swagger.v3.oas.annotations.media.Schema(description = "Whether the current session is a guest session.")
+        boolean guest) {
 }

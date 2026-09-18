@@ -82,15 +82,16 @@ app:
     # Fixed window, so up to 2x a limit is possible across a window boundary. That is
     # accepted: this defends against sustained abuse, not a momentary burst.
     enabled: ${RATELIMIT_ENABLED:true}
-    create:
-      # Link creation is the expensive path: a DB write plus uniqueness checks.
-      limit: ${RATELIMIT_CREATE_LIMIT:20}
-      window: ${RATELIMIT_CREATE_WINDOW:1m}
-    redirect:
-      # Deliberately generous. A real visitor opening several links in quick
-      # succession must never see a 429; this is here to stop floods, not browsing.
-      limit: ${RATELIMIT_REDIRECT_LIMIT:300}
-      window: ${RATELIMIT_REDIRECT_WINDOW:1m}
+    budgets:
+      create:
+        # Link creation is the expensive path: a DB write plus uniqueness checks.
+        limit: ${RATELIMIT_CREATE_LIMIT:20}
+        window: ${RATELIMIT_CREATE_WINDOW:1m}
+      redirect:
+        # Deliberately generous. A real visitor opening several links in quick
+        # succession must never see a 429; this is here to stop floods, not browsing.
+        limit: ${RATELIMIT_REDIRECT_LIMIT:300}
+        window: ${RATELIMIT_REDIRECT_WINDOW:1m}
 
   analytics:
     # Secret mixed into the client-IP hash so stored hashes cannot be reversed by

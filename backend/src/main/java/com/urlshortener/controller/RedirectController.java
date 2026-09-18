@@ -10,9 +10,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.urlshortener.entity.Url;
 import com.urlshortener.event.ClickPublisher;
+import com.urlshortener.exception.ErrorResponse;
 import com.urlshortener.service.UrlService;
 
 import jakarta.servlet.http.HttpServletRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 /**
  * Redirect endpoint - the hot path.
@@ -60,6 +67,17 @@ public class RedirectController {
      * easy to miss when a cache is added after analytics already works.
      */
     @GetMapping("/" + SHORT_CODE_PATTERN)
+    @SecurityRequirements
+    @Operation(summary = "Redirect a short code to its target URL")
+    @ApiResponses({
+            @ApiResponse(responseCode = "302", description = "Redirect to the target URL"),
+            @ApiResponse(responseCode = "404", description = "Short code was not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "410", description = "Short code is expired or deleted",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "429", description = "Redirect rate limit exceeded",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
         Url url = urlService.resolve(shortCode);
 

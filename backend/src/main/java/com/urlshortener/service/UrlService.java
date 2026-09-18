@@ -100,7 +100,7 @@ public class UrlService {
      * because substituting a different code would defeat the point of requesting one.
      */
     private Url createWithAlias(String targetUrl, CreateUrlRequest request, Long ownerId) {
-        releaseOwnDeletedAlias(request.customAlias(), ownerId);
+        releaseOwnReclaimableAlias(request.customAlias(), ownerId);
 
         try {
             return repository.saveAndFlush(new Url(request.customAlias(), targetUrl, request.expiresAt(), ownerId));
@@ -113,16 +113,18 @@ public class UrlService {
     }
 
     /**
-     * Frees an alias the caller previously deleted, so they can reuse their own code.
+     * Frees an alias the caller previously deleted or let expire, so they can reuse
+     * their own code.
      *
-     * <p><strong>Only the original owner, and only their own deleted link.</strong> A
-     * deleted code stays claimed against everyone else on purpose: a short link that has
-     * been shared is still in circulation after deletion, so handing the code to a
-     * different party would silently redirect everyone holding the old link to a
-     * destination of that party's choosing. That hijack risk does not exist when the
-     * same owner reclaims it - the link was theirs to point wherever they like either
-     * way - and blocking them produced an "already taken" message about a link they
-     * could no longer see, which is indistinguishable from a bug.
+     * <p><strong>Only the original owner, and only their own deleted or expired
+     * link.</strong> A deleted or expired code stays claimed against everyone else on
+     * purpose: a short link that has been shared is still in circulation after
+     * deletion or expiry, so handing the code to a different party would silently
+     * redirect everyone holding the old link to a destination of that party's
+     * choosing. That hijack risk does not exist when the same owner reclaims it - the
+     * link was theirs to point wherever they like either way - and blocking them
+     * produced an "already taken" message about a link they could no longer reach,
+     * which is indistinguishable from a bug.
      *
      * <p><strong>The old row is deleted, not revived.</strong> Reusing it would carry
      * over {@code created_at} and {@code expires_at}, both deliberately immutable
@@ -134,18 +136,19 @@ public class UrlService {
      * <p><strong>Accepted data loss, stated plainly.</strong> The previous link's click
      * history is destroyed here. It has to be - those rows reference the row being
      * removed - and keeping them would misattribute another URL's traffic. The history
-     * belonged to a link the owner had already deleted.
+     * belonged to a link the owner had already deleted or that had already expired.
      *
      * <p>Check-then-act is safe here: if another request claims the alias in between,
      * the insert that follows still fails on the unique index and the caller gets the
      * same conflict they would have got anyway. The database remains the only arbiter.
      */
-    private void releaseOwnDeletedAlias(String alias, Long ownerId) {
+    private void releaseOwnReclaimableAlias(String alias, Long ownerId) {
         repository.findByShortCode(alias)
-                .filter(existing -> !existing.isActive())
+                .filter(existing -> !existing.isActive() || existing.isExpiredAt(clock.instant()))
                 .filter(existing -> ownerId.equals(existing.getOwnerId()))
                 .ifPresent(existing -> {
-                    log.info("Releasing deleted alias '{}' for reuse by its owner", alias);
+                    log.info("Releasing {} alias '{}' for reuse by its owner",
+                            existing.isActive() ? "expired" : "deleted", alias);
                     analyticsService.discardClickHistory(existing.getId());
                     repository.delete(existing);
                     repository.flush();

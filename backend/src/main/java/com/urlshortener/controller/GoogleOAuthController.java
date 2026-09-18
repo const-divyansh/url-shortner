@@ -21,6 +21,12 @@ import com.urlshortener.exception.AuthenticationFailedException;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 /**
  * "Sign in with Google" login: a full-page redirect flow (Authorization Code), not a
@@ -52,6 +58,11 @@ public class GoogleOAuthController {
     }
 
     @GetMapping("/start")
+    @SecurityRequirements
+    @Operation(summary = "Start the Google sign-in redirect")
+    @ApiResponses({
+            @ApiResponse(responseCode = "302", description = "Redirect to Google's authorization page")
+    })
     public ResponseEntity<Void> start(HttpServletResponse response) {
         String state = generateState();
 
@@ -67,6 +78,13 @@ public class GoogleOAuthController {
     }
 
     @GetMapping("/callback")
+    @SecurityRequirements
+    @Operation(summary = "Finish the Google sign-in redirect")
+    @ApiResponses({
+            @ApiResponse(responseCode = "302", description = "Redirect to the frontend with a session token"),
+            @ApiResponse(responseCode = "401", description = "Google login could not be verified",
+                    content = @Content(schema = @Schema(implementation = com.urlshortener.exception.ErrorResponse.class)))
+    })
     public ResponseEntity<Void> callback(
             @RequestParam("code") String code,
             @RequestParam("state") String state,
