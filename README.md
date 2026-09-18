@@ -20,11 +20,16 @@ A production-grade, highly scalable URL shortener service built with **Java 17**
 | Layer | Technology |
 | :--- | :--- |
 | **Language & Runtime** | Java 17 |
-| **Framework** | Spring Boot 3.3.4 (Spring MVC, Data JPA, Actuator) |
+| **Backend Framework** | Spring Boot 3.3.4 (Spring MVC, Data JPA, Validation, Actuator, WebSocket/STOMP) |
 | **Primary Database** | PostgreSQL |
 | **Caching & Buffering** | Redis (rate-limit counters, click-event buffer) |
-| **Database Migrations** | `schema.sql` 
-| **Build & Tooling** | Maven |
+| **Live Updates** | STOMP over WebSocket — dashboard click counts push in real time |
+| **API Contract** | springdoc-openapi — OpenAPI 3 spec + Swagger UI generated from the live code |
+| **Database Migrations** | `schema.sql` |
+| **Backend Testing** | JUnit 5, Testcontainers (Postgres + Redis in integration tests) |
+| **Frontend** | React 19 + TypeScript + Vite |
+| **Frontend Testing** | Playwright (E2E), oxlint (lint) |
+| **Build & Tooling** | Maven (backend), npm (frontend), Make (orchestration) |
 | **Containerization** | Docker & Docker Compose |
 
 ---
