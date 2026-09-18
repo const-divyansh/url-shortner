@@ -1,0 +1,99 @@
+package com.urlshortener.exception;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+/**
+ * Maps exceptions to HTTP responses in one place.
+ *
+ * <p>Centralised so the error contract is defined once rather than being re-implemented
+ * per controller, which is how inconsistent shapes and accidental detail leaks arise.
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(ValidationException e) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(AuthenticationRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleAuthenticationRequired(AuthenticationRequiredException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("auth.required", e.getMessage()));
+    }
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ErrorResponse> handleAuthenticationFailed(AuthenticationFailedException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("auth.invalid", e.getMessage()));
+    }
+
+    @ExceptionHandler(OwnershipForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleOwnershipForbidden(OwnershipForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("auth.forbidden", e.getMessage()));
+    }
+
+    @ExceptionHandler(AliasUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleAliasTaken(AliasUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("alias.unavailable", e.getMessage()));
+    }
+
+    @ExceptionHandler(ShortCodeNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(ShortCodeNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("code.not_found", e.getMessage()));
+    }
+
+    @ExceptionHandler(ShortCodeExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleExpired(ShortCodeExpiredException e) {
+        // 410, not 404: the link existed and is permanently finished. A 404 would
+        // wrongly suggest it never existed.
+        return ResponseEntity.status(HttpStatus.GONE)
+                .body(ErrorResponse.of("code.expired", e.getMessage()));
+    }
+
+    /**
+     * Unparseable body, or a field of the wrong type - for example a malformed
+     * {@code expiresAt}.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException e) {
+        // The exception text can quote the offending payload and internal type names,
+        // so a fixed message is returned instead of echoing it back.
+        log.debug("Unreadable request body", e);
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of("request.malformed",
+                        "Request body is malformed or contains an invalid field value"));
+    }
+
+    @ExceptionHandler(CodeGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleGenerationFailure(CodeGenerationException e) {
+        // Genuinely unexpected - logged at error level because it normally indicates a
+        // generator defect rather than bad input.
+        log.error("Short-code generation failed", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("code.generation_failed",
+                        "Could not allocate a short code, please retry"));
+    }
+
+    /**
+     * Catch-all, so an unanticipated failure still returns the documented error shape
+     * rather than a servlet-container HTML page.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
+        log.error("Unhandled exception", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("internal_error", "An unexpected error occurred"));
+    }
+}
