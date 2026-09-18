@@ -1,0 +1,2 @@
+/* Global resets live in App.css alongside the component styles, since this app has a
+   single stylesheet. Kept as an empty entry point so main.tsx's import stays valid. */
