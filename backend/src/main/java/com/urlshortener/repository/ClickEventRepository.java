@@ -4,8 +4,10 @@ import java.util.List;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.urlshortener.entity.ClickEvent;
 
@@ -32,4 +34,21 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
      */
     @Query("select max(c.occurredAt) from ClickEvent c where c.urlId = :urlId")
     java.time.Instant findLastClickAt(@Param("urlId") Long urlId);
+
+    /**
+     * Removes every click recorded against a link.
+     *
+     * <p>Used when an owner reclaims their own deleted alias. The clicks belong to the
+     * link that previously held that code; carrying them over would report another
+     * URL's traffic as the new link's own, and {@code click_events.url_id} references
+     * {@code urls(id)}, so they must go before that row can be released.
+     *
+     * <p>{@code @Transactional} because a derived modifying query has no ambient
+     * transaction of its own here - the creation path is deliberately untransacted so
+     * its retry loop is not poisoned by a failed statement.
+     */
+    @Modifying
+    @Transactional
+    @Query("delete from ClickEvent c where c.urlId = :urlId")
+    int deleteByUrlId(@Param("urlId") Long urlId);
 }

@@ -59,7 +59,91 @@ export function formatReferrer(referrer: string | undefined): string {
 
 /**
  * Renders a user agent for the history table.
+ *
+ * Raw user-agent strings are ~120 characters of vendor boilerplate, so a table of
+ * them is unreadable and every row looks identical. This reduces one to the only two
+ * facts a reader is actually scanning for - which browser, which platform.
+ *
+ * The full string is still handed to the table as the cell's `title`, so nothing is
+ * lost; this is presentation only, and the stored value is untouched.
  */
 export function formatUserAgent(userAgent: string | undefined): string {
-  return userAgent ?? strings.analytics.unknownAgent
+  if (!userAgent) {
+    return strings.analytics.unknownAgent
+  }
+
+  const browser = detectBrowser(userAgent)
+  const os = detectOs(userAgent)
+
+  if (browser && os) {
+    return strings.analytics.agentLabel(browser, os)
+  }
+
+  // One half is better than nothing, but a string we could not read at all - a bot, a
+  // crawler, a scripted client - is returned verbatim rather than labelled with a
+  // guess. A wrong label is worse than a long one: it reads as fact.
+  return browser ?? os ?? userAgent
+}
+
+/**
+ * Browser detection patterns, **most specific first** - the order is the logic.
+ *
+ * Vendors deliberately impersonate each other for compatibility: Edge's user agent
+ * contains `Chrome`, Chrome's contains `Safari`, and Opera's contains both. Matching
+ * in declaration order is what keeps Edge from being reported as Chrome and Chrome
+ * from being reported as Safari, so entries must never be reordered casually.
+ *
+ * Safari is matched on `Version/` rather than `Safari/`, because the `Safari/537.36`
+ * token is a frozen WebKit build number that every WebKit-derived browser carries and
+ * that no longer tracks any real Safari release.
+ *
+ * Kept here rather than in `strings.ts` even though the names are user-visible: these
+ * are product names that never translate, and each is meaningless apart from the
+ * pattern that detects it. Splitting the pair across two files would invite drift.
+ */
+const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bEdg(?:e|A|iOS)?\/(\d+)/, 'Edge'],
+  [/\bOPR\/(\d+)/, 'Opera'],
+  [/\bSamsungBrowser\/(\d+)/, 'Samsung Internet'],
+  [/\b(?:Firefox|FxiOS)\/(\d+)/, 'Firefox'],
+  [/\b(?:Chrome|CriOS)\/(\d+)/, 'Chrome'],
+  [/\bVersion\/(\d+).*\bSafari\//, 'Safari'],
+]
+
+/**
+ * Platform patterns, **most specific first** for the same reason as above: an iPad
+ * reports `Mac OS X`, and Android reports `Linux`, so the broader match has to come
+ * second or it swallows the narrower one.
+ */
+const OS_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(?:iPhone|iPad|iPod)\b/, 'iOS'],
+  [/\bAndroid\b/, 'Android'],
+  [/\b(?:Mac OS X|Macintosh)\b/, 'macOS'],
+  [/\bWindows NT\b/, 'Windows'],
+  [/\b(?:Linux|X11)\b/, 'Linux'],
+]
+
+/** Returns e.g. `Chrome 153`, or null when no known browser is recognised. */
+function detectBrowser(userAgent: string): string | null {
+  for (const [pattern, name] of BROWSER_PATTERNS) {
+    const match = pattern.exec(userAgent)
+    if (match) {
+      // Major version only. The full quad ("153.0.0.0") is noise in a table cell, and
+      // the trailing zeros are placeholders Chrome stopped populating years ago.
+      return `${name} ${match[1]}`
+    }
+  }
+
+  return null
+}
+
+/** Returns e.g. `macOS`, or null when no known platform is recognised. */
+function detectOs(userAgent: string): string | null {
+  for (const [pattern, name] of OS_PATTERNS) {
+    if (pattern.test(userAgent)) {
+      return name
+    }
+  }
+
+  return null
 }

@@ -10,10 +10,10 @@ import org.springframework.stereotype.Service;
 
 import com.urlshortener.dto.CreateUrlRequest;
 import com.urlshortener.auth.AuthenticatedPrincipal;
+import com.urlshortener.auth.LinkAuthorizationPolicy;
 import com.urlshortener.entity.Url;
 import com.urlshortener.exception.AliasUnavailableException;
 import com.urlshortener.exception.CodeGenerationException;
-import com.urlshortener.exception.OwnershipForbiddenException;
 import com.urlshortener.exception.ShortCodeDeletedException;
 import com.urlshortener.exception.ShortCodeExpiredException;
 import com.urlshortener.exception.ShortCodeNotFoundException;
@@ -46,15 +46,21 @@ public class UrlService {
     static final int MAX_ATTEMPTS = 5;
 
     private final UrlRepository repository;
+    private final AnalyticsService analyticsService;
+    private final LinkAuthorizationPolicy authorizationPolicy;
     private final ShortCodeGeneratorFactory generatorFactory;
     private final UrlValidationChain validationChain;
     private final Clock clock;
 
     public UrlService(UrlRepository repository,
+                      AnalyticsService analyticsService,
+                      LinkAuthorizationPolicy authorizationPolicy,
                       ShortCodeGeneratorFactory generatorFactory,
                       UrlValidationChain validationChain,
                       Clock clock) {
         this.repository = repository;
+        this.analyticsService = analyticsService;
+        this.authorizationPolicy = authorizationPolicy;
         this.generatorFactory = generatorFactory;
         this.validationChain = validationChain;
         this.clock = clock;
@@ -94,6 +100,8 @@ public class UrlService {
      * because substituting a different code would defeat the point of requesting one.
      */
     private Url createWithAlias(String targetUrl, CreateUrlRequest request, Long ownerId) {
+        releaseOwnDeletedAlias(request.customAlias(), ownerId);
+
         try {
             return repository.saveAndFlush(new Url(request.customAlias(), targetUrl, request.expiresAt(), ownerId));
         } catch (DataIntegrityViolationException e) {
@@ -102,6 +110,46 @@ public class UrlService {
             }
             throw e;
         }
+    }
+
+    /**
+     * Frees an alias the caller previously deleted, so they can reuse their own code.
+     *
+     * <p><strong>Only the original owner, and only their own deleted link.</strong> A
+     * deleted code stays claimed against everyone else on purpose: a short link that has
+     * been shared is still in circulation after deletion, so handing the code to a
+     * different party would silently redirect everyone holding the old link to a
+     * destination of that party's choosing. That hijack risk does not exist when the
+     * same owner reclaims it - the link was theirs to point wherever they like either
+     * way - and blocking them produced an "already taken" message about a link they
+     * could no longer see, which is indistinguishable from a bug.
+     *
+     * <p><strong>The old row is deleted, not revived.</strong> Reusing it would carry
+     * over {@code created_at} and {@code expires_at}, both deliberately immutable
+     * ({@code updatable = false}), so a reclaimed alias would silently inherit the
+     * previous link's expiry and creation time. A fresh row is also what makes the
+     * click history correct: {@code click_events} reference {@code urls(id)}, so a new
+     * identity cannot inherit traffic recorded for a different target URL.
+     *
+     * <p><strong>Accepted data loss, stated plainly.</strong> The previous link's click
+     * history is destroyed here. It has to be - those rows reference the row being
+     * removed - and keeping them would misattribute another URL's traffic. The history
+     * belonged to a link the owner had already deleted.
+     *
+     * <p>Check-then-act is safe here: if another request claims the alias in between,
+     * the insert that follows still fails on the unique index and the caller gets the
+     * same conflict they would have got anyway. The database remains the only arbiter.
+     */
+    private void releaseOwnDeletedAlias(String alias, Long ownerId) {
+        repository.findByShortCode(alias)
+                .filter(existing -> !existing.isActive())
+                .filter(existing -> ownerId.equals(existing.getOwnerId()))
+                .ifPresent(existing -> {
+                    log.info("Releasing deleted alias '{}' for reuse by its owner", alias);
+                    analyticsService.discardClickHistory(existing.getId());
+                    repository.delete(existing);
+                    repository.flush();
+                });
     }
 
     /**
@@ -168,15 +216,23 @@ public class UrlService {
      *                                     deleted - the caller cannot distinguish
      *                                     "never existed" from "already gone", which is
      *                                     the same non-information a stranger would see
-     * @throws OwnershipForbiddenException if the code exists but belongs to someone else
+     * @throws OwnershipForbiddenException   if the code exists but belongs to someone else
+     * @throws GuestActionForbiddenException if the caller holds an anonymous guest
+     *                                       session. Deletion is irreversible for
+     *                                       everyone holding the link, and a guest
+     *                                       session is minted on demand with nobody
+     *                                       vouching for it, so the destructive action
+     *                                       is reserved for a verified identity
      */
     public void delete(String shortCode, AuthenticatedPrincipal principal) {
+        // Before the lookup, so a guest cannot use the response to learn whether a code
+        // exists or who owns it.
+        authorizationPolicy.requireVerifiedIdentity(principal);
+
         Url url = repository.findByShortCode(shortCode)
                 .orElseThrow(() -> new ShortCodeNotFoundException(shortCode));
 
-        if (url.getOwnerId() == null || !url.getOwnerId().equals(principal.ownerId())) {
-            throw new OwnershipForbiddenException("You do not have access to this link.");
-        }
+        authorizationPolicy.requireOwnership(url, principal.ownerId());
         if (!url.isActive()) {
             throw new ShortCodeNotFoundException(shortCode);
         }

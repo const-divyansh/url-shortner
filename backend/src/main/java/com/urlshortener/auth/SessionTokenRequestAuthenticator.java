@@ -55,10 +55,8 @@ public class SessionTokenRequestAuthenticator implements RequestAuthenticator {
             throw new AuthenticationRequiredException("Sign in to continue.");
         }
 
-        OwnerSession session = repository.findByTokenHash(codec.hash(rawToken.trim()))
+        return repository.findPrincipalByTokenHash(codec.hash(rawToken.trim()))
                 .orElseThrow(() -> new AuthenticationFailedException("Your session is no longer valid."));
-
-        return new AuthenticatedPrincipal(session.getOwnerId(), PROVIDER_NAME);
     }
 
     private String extractBearerToken(HttpServletRequest request) {

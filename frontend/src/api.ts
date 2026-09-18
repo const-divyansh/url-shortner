@@ -7,6 +7,7 @@ import type {
   CreateUrlResponse,
   ErrorResponse,
   OwnedUrlSummary,
+  SessionInfo,
   SessionResponse,
   ShortCodeStrategy,
 } from './types'
@@ -26,6 +27,7 @@ import type {
  */
 const paths = {
   continueAsGuest: () => '/api/auth/guest',
+  currentSession: () => '/api/auth/session',
   googleLoginStart: () => '/api/auth/google/start',
   createUrl: () => '/api/urls',
   ownedUrls: () => '/api/urls',
@@ -256,6 +258,17 @@ export function fetchAnalytics(
   const query = new URLSearchParams({ page: String(page), size: String(size) })
 
   return request<AnalyticsResponse>(`${paths.analytics(shortCode)}?${query}`, {}, 'required')
+}
+
+/**
+ * Asks the API who the caller currently is.
+ *
+ * Used to decide which controls to offer - a guest is not shown a Delete button.
+ * That is presentation only; the API enforces the same rule independently, because
+ * anything the browser decides can be changed by whoever holds the browser.
+ */
+export function fetchSessionInfo(): Promise<SessionInfo> {
+  return request<SessionInfo>(paths.currentSession(), {}, 'required')
 }
 
 /**

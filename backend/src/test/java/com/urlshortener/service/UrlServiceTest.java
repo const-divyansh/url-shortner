@@ -24,10 +24,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import com.urlshortener.auth.AuthenticatedPrincipal;
+import com.urlshortener.auth.LinkAuthorizationPolicy;
+import com.urlshortener.entity.IdentityProvider;
 import com.urlshortener.dto.CreateUrlRequest;
 import com.urlshortener.entity.Url;
 import com.urlshortener.exception.AliasUnavailableException;
 import com.urlshortener.exception.CodeGenerationException;
+import com.urlshortener.exception.GuestActionForbiddenException;
 import com.urlshortener.exception.OwnershipForbiddenException;
 import com.urlshortener.exception.ShortCodeDeletedException;
 import com.urlshortener.exception.ShortCodeExpiredException;
@@ -44,10 +47,15 @@ class UrlServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
     private static final String TARGET = "https://example.com/page";
-    private static final AuthenticatedPrincipal OWNER = new AuthenticatedPrincipal(7L, "api-key");
+    private static final AuthenticatedPrincipal OWNER =
+            new AuthenticatedPrincipal(7L, IdentityProvider.GOOGLE);
+    private static final AuthenticatedPrincipal GUEST =
+            new AuthenticatedPrincipal(7L, IdentityProvider.GUEST);
 
     @Mock
     private UrlRepository repository;
+    @Mock
+    private AnalyticsService analyticsService;
     @Mock
     private ShortCodeGeneratorFactory generatorFactory;
     @Mock
@@ -79,8 +87,8 @@ class UrlServiceTest {
     @BeforeEach
     void setUp() {
         generator = new RecordingGenerator();
-        service = new UrlService(repository, generatorFactory, validationChain,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new UrlService(repository, analyticsService, new LinkAuthorizationPolicy(),
+                generatorFactory, validationChain, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static CreateUrlRequest request(String alias) {
@@ -211,6 +219,89 @@ class UrlServiceTest {
         assertThat(created.getShortCode()).isEqualTo("code0");
     }
 
+    // --- reclaiming an alias the caller previously deleted --------------------------
+
+    @Test
+    @DisplayName("REGRESSION: the owner may reuse an alias they deleted")
+    void ownerCanReuseTheirOwnDeletedAlias() {
+        // Reported from manual testing: after deleting a link, its alias still reported
+        // "already taken" - about a link the user could no longer see anywhere, which is
+        // indistinguishable from a bug.
+        Url deleted = new Url("spring-sale", "https://old.example.com", null, OWNER.ownerId());
+        deleted.deactivate();
+        when(repository.findByShortCode("spring-sale")).thenReturn(Optional.of(deleted));
+        when(repository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        Url created = service.create(request("spring-sale"), OWNER);
+
+        assertThat(created.getShortCode()).isEqualTo("spring-sale");
+        assertThat(created.getTargetUrl()).isEqualTo(TARGET);
+        verify(repository).delete(deleted);
+    }
+
+    @Test
+    @DisplayName("reclaiming discards the previous link's clicks rather than inheriting them")
+    void reclaimingClearsPreviousClickHistory() {
+        // click_events reference urls(id). Carrying them onto the new link would report
+        // a different target URL's traffic as this link's own.
+        Url deleted = new Url("spring-sale", "https://old.example.com", null, OWNER.ownerId());
+        deleted.deactivate();
+        when(repository.findByShortCode("spring-sale")).thenReturn(Optional.of(deleted));
+        when(repository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.create(request("spring-sale"), OWNER);
+
+        verify(analyticsService).discardClickHistory(deleted.getId());
+    }
+
+    @Test
+    @DisplayName("SECURITY: another owner's deleted alias stays claimed")
+    void cannotReuseSomeoneElsesDeletedAlias() {
+        // The hijack case the retirement rule exists for: a shared link is still in
+        // circulation after deletion, so handing its code to a different party would
+        // silently redirect everyone holding the old link.
+        Url someoneElses = new Url("spring-sale", "https://old.example.com", null, 999L);
+        someoneElses.deactivate();
+        when(repository.findByShortCode("spring-sale")).thenReturn(Optional.of(someoneElses));
+        when(repository.saveAndFlush(any())).thenThrow(collision());
+
+        assertThatThrownBy(() -> service.create(request("spring-sale"), OWNER))
+                .isInstanceOf(AliasUnavailableException.class);
+
+        verify(repository, never()).delete(any());
+        verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    @DisplayName("SECURITY: a LIVE alias of the caller's own is not silently replaced")
+    void doesNotReplaceOwnLiveAlias() {
+        // Only a deleted link is reclaimable. Releasing a live one would destroy a
+        // working link and its history on what looks like an ordinary create.
+        Url live = new Url("spring-sale", "https://live.example.com", null, OWNER.ownerId());
+        when(repository.findByShortCode("spring-sale")).thenReturn(Optional.of(live));
+        when(repository.saveAndFlush(any())).thenThrow(collision());
+
+        assertThatThrownBy(() -> service.create(request("spring-sale"), OWNER))
+                .isInstanceOf(AliasUnavailableException.class);
+
+        verify(repository, never()).delete(any());
+        verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    @DisplayName("an unowned legacy link's alias is not reclaimable")
+    void cannotReuseUnownedDeletedAlias() {
+        Url legacy = new Url("spring-sale", "https://old.example.com", null);
+        legacy.deactivate();
+        when(repository.findByShortCode("spring-sale")).thenReturn(Optional.of(legacy));
+        when(repository.saveAndFlush(any())).thenThrow(collision());
+
+        assertThatThrownBy(() -> service.create(request("spring-sale"), OWNER))
+                .isInstanceOf(AliasUnavailableException.class);
+
+        verify(repository, never()).delete(any());
+    }
+
     // --- validation ordering -------------------------------------------------------
 
     @Test
@@ -318,6 +409,35 @@ class UrlServiceTest {
 
         assertThatThrownBy(() -> service.delete("abc1234", OWNER))
                 .isInstanceOf(OwnershipForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("SECURITY: a guest session cannot delete, even its own link")
+    void guestCannotDelete() {
+        // A guest session is minted on demand with nobody vouching for it, and deletion
+        // is irreversible for everyone still holding the link.
+        assertThatThrownBy(() -> service.delete("abc1234", GUEST))
+                .isInstanceOf(GuestActionForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("SECURITY: the guest check runs before the link is looked up")
+    void guestCheckPrecedesLookup() {
+        // Otherwise the response would differ for a code that exists versus one that
+        // does not, letting a guest probe for other people's short codes.
+        assertThatThrownBy(() -> service.delete("abc1234", GUEST))
+                .isInstanceOf(GuestActionForbiddenException.class);
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    @DisplayName("a principal with an unknown provider is treated as a guest")
+    void unknownProviderIsTreatedAsGuest() {
+        // Fail closed: an identity we cannot classify must get the smaller set of
+        // permissions, never the larger one.
+        assertThatThrownBy(() -> service.delete("abc1234", new AuthenticatedPrincipal(7L, null)))
+                .isInstanceOf(GuestActionForbiddenException.class);
     }
 
     @Test

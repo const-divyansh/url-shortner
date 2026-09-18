@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.urlshortener.auth.GoogleOAuthClient;
 import com.urlshortener.auth.IssuedSession;
+import com.urlshortener.entity.IdentityProvider;
 import com.urlshortener.auth.OwnerSessionIssuer;
 import com.urlshortener.config.GoogleOAuthProperties;
 import com.urlshortener.exception.AuthenticationFailedException;
@@ -76,7 +77,7 @@ public class GoogleOAuthController {
         }
 
         GoogleOAuthClient.GoogleIdentity identity = googleOAuthClient.exchangeCodeForIdentity(code);
-        IssuedSession issued = sessionIssuer.issueForProviderIdentity("google", identity.subject(), identity.email());
+        IssuedSession issued = sessionIssuer.issueForProviderIdentity(IdentityProvider.GOOGLE, identity.subject(), identity.email());
 
         String redirectTo = properties.frontendRedirectUri() + "#session=" + issued.token();
 

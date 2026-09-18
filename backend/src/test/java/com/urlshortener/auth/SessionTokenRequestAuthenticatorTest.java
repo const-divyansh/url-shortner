@@ -12,7 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.urlshortener.entity.OwnerSession;
+import com.urlshortener.entity.IdentityProvider;
 import com.urlshortener.exception.AuthenticationFailedException;
 import com.urlshortener.exception.AuthenticationRequiredException;
 import com.urlshortener.repository.OwnerSessionRepository;
@@ -42,7 +42,7 @@ class SessionTokenRequestAuthenticatorTest {
     @DisplayName("invalid session token is a 401")
     void invalidTokenIsRejected() {
         when(request.getHeader("Authorization")).thenReturn("Bearer bad-token");
-        when(repository.findByTokenHash(codec.hash("bad-token")))
+        when(repository.findPrincipalByTokenHash(codec.hash("bad-token")))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authenticator().authenticate(request))
@@ -54,20 +54,30 @@ class SessionTokenRequestAuthenticatorTest {
     void validTokenAuthenticatesOwner() {
         String rawToken = "valid-token";
         when(request.getHeader("Authorization")).thenReturn("Bearer " + rawToken);
-        when(repository.findByTokenHash(codec.hash(rawToken)))
-                .thenReturn(Optional.of(ownerSession()));
+        when(repository.findPrincipalByTokenHash(codec.hash(rawToken)))
+                .thenReturn(Optional.of(new AuthenticatedPrincipal(42L, IdentityProvider.GOOGLE)));
 
         AuthenticatedPrincipal principal = authenticator().authenticate(request);
 
         assertThat(principal.ownerId()).isEqualTo(42L);
-        assertThat(principal.provider()).isEqualTo(SessionTokenRequestAuthenticator.PROVIDER_NAME);
+        // The owner's identity provider, not the authenticator's name: authorisation
+        // now depends on telling a guest from a verified identity.
+        assertThat(principal.provider()).isEqualTo(IdentityProvider.GOOGLE);
+        assertThat(principal.isGuest()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a guest session is reported as a guest")
+    void guestSessionIsMarkedGuest() {
+        String rawToken = "guest-token";
+        when(request.getHeader("Authorization")).thenReturn("Bearer " + rawToken);
+        when(repository.findPrincipalByTokenHash(codec.hash(rawToken)))
+                .thenReturn(Optional.of(new AuthenticatedPrincipal(7L, IdentityProvider.GUEST)));
+
+        assertThat(authenticator().authenticate(request).isGuest()).isTrue();
     }
 
     private SessionTokenRequestAuthenticator authenticator() {
         return new SessionTokenRequestAuthenticator(repository, codec);
-    }
-
-    private static OwnerSession ownerSession() {
-        return new OwnerSession(42L, "ignored-hash");
     }
 }

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ApiError, deleteUrl, fetchAnalytics, fetchOwnedUrls, subscribeToClickEvents } from '../api'
+import {
+  ApiError,
+  deleteUrl,
+  fetchAnalytics,
+  fetchOwnedUrls,
+  fetchSessionInfo,
+  subscribeToClickEvents,
+} from '../api'
 import { ANALYTICS_PAGE_SIZE, COPY_FEEDBACK_MS } from '../config'
 import { formatInstant, formatReferrer, formatUserAgent } from '../format'
 import { strings } from '../strings'
@@ -43,6 +50,10 @@ export function AnalyticsView({ initialShortCode }: Props) {
   // delete implicitly means any other row's pending confirmation is stale.
   const [confirmingDeleteCode, setConfirmingDeleteCode] = useState<string | null>(null)
   const [deletingCode, setDeletingCode] = useState<string | null>(null)
+  // Whether the API will accept a delete from this caller. Starts false so the button
+  // is never shown before the answer arrives - offering a control and then withdrawing
+  // it reads as a glitch, while revealing one a moment later does not.
+  const [canDelete, setCanDelete] = useState(false)
 
   // Clears the "Copied" confirmation after a moment, same contract as the copy
   // button on the create screen: without cleanup, unmounting mid-timeout would leave
@@ -172,6 +183,29 @@ export function AnalyticsView({ initialShortCode }: Props) {
     }
   }, [initialShortCode, load])
 
+  // Asks the API who this caller is, rather than inferring it from which login button
+  // was pressed - a session restored in another tab has no such local memory. Failure
+  // leaves canDelete false: if we cannot establish the caller is permitted, the safe
+  // default is to not offer the action.
+  useEffect(() => {
+    let cancelled = false
+
+    void fetchSessionInfo()
+      .then((session) => {
+        if (!cancelled) {
+          setCanDelete(!session.guest)
+        }
+      })
+      .catch(() => {
+        // Deliberately ignored: this only decides whether a button is shown, and the
+        // owned-links fetch below already reports a broken session to the user.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -291,7 +325,7 @@ export function AnalyticsView({ initialShortCode }: Props) {
                     {copiedCode === link.shortCode ? strings.create.copied : strings.create.copy}
                   </button>
 
-                  {confirmingDeleteCode === link.shortCode ? (
+                  {!canDelete ? null : confirmingDeleteCode === link.shortCode ? (
                     <span className="owned-link-delete-confirm">
                       <span className="owned-link-delete-prompt">
                         {strings.analytics.deleteConfirming}

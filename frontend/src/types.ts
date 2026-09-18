@@ -49,6 +49,22 @@ export interface SessionResponse {
   provider: string
 }
 
+/**
+ * Who the API considers the caller to be.
+ *
+ * Fetched rather than remembered from whichever login button was pressed: a session
+ * restored in a new tab, replaced by a different login, or cleared would leave that
+ * local guess stale, and the UI would then offer actions the API will refuse.
+ */
+export interface SessionInfo {
+  provider: string
+  /**
+   * True for an anonymous session. Sent by the API rather than derived from
+   * `provider` here, so the frontend never re-implements a rule the API owns.
+   */
+  guest: boolean
+}
+
 /** One previously created link owned by the currently signed-in caller. */
 export interface OwnedUrlSummary {
   shortCode: string

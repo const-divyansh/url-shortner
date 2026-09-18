@@ -2,6 +2,7 @@ package com.urlshortener.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -42,6 +43,15 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("auth.forbidden", e.getMessage()));
     }
 
+    @ExceptionHandler(GuestActionForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleGuestForbidden(GuestActionForbiddenException e) {
+        // 403 with its own code, not auth.forbidden: the caller does own the resource,
+        // so telling them it is not theirs would be false. The distinct code also lets
+        // the client offer the actual remedy - sign in with Google.
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("auth.guest_forbidden", e.getMessage()));
+    }
+
     @ExceptionHandler(AliasUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleAliasTaken(AliasUnavailableException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -69,6 +79,19 @@ public class GlobalExceptionHandler {
         // consumers can tell the two apart.
         return ResponseEntity.status(HttpStatus.GONE)
                 .body(ErrorResponse.of("code.deleted", e.getMessage()));
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimited(RateLimitExceededException e) {
+        // Retry-After is the whole point of answering 429 rather than dropping the
+        // request: it converts "you failed" into "come back at this time", which is
+        // what stops a throttled client from retrying straight back into the limit.
+        // Logged at debug, not warn - being rate limited is the feature working, and
+        // a flood would otherwise fill the log with the very traffic being rejected.
+        log.debug("Rate limit exceeded", e);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfter().toSeconds()))
+                .body(ErrorResponse.of("rate_limit.exceeded", e.getMessage()));
     }
 
     /**

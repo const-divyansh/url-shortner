@@ -2,12 +2,16 @@ package com.urlshortener.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.urlshortener.auth.AuthenticatedOwner;
+import com.urlshortener.auth.AuthenticatedPrincipal;
 import com.urlshortener.auth.IssuedSession;
 import com.urlshortener.auth.OwnerSessionIssuer;
+import com.urlshortener.dto.SessionInfoResponse;
 import com.urlshortener.dto.SessionResponse;
 
 /**
@@ -31,5 +35,18 @@ public class GuestAuthController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new SessionResponse(issued.token(), issued.provider()));
+    }
+
+    /**
+     * Reports who the caller currently is.
+     *
+     * <p>The client uses this to decide which actions to offer - a guest is not shown a
+     * Delete control, for instance. That is presentation only: the API enforces the same
+     * rule independently, because anything the browser decides can be changed by whoever
+     * is holding the browser.
+     */
+    @GetMapping("/session")
+    public SessionInfoResponse currentSession(@AuthenticatedOwner AuthenticatedPrincipal principal) {
+        return new SessionInfoResponse(principal.provider(), principal.isGuest());
     }
 }

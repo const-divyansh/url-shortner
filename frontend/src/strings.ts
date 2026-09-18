@@ -3,11 +3,7 @@
  *
  * Centralised rather than inlined in components so wording changes in one place, and
  * so introducing an i18n library later is a swap of this module rather than a rewrite
- * of every component. ADR-006 deliberately drops the library as disproportionate for
- * two screens, but keeps the indirection it would have needed.
- *
- * Values that vary are functions rather than fragments assembled at the call site, so
- * sentence structure stays here where it can be changed as a whole.
+ * of every component.
  */
 export const strings = {
   app: {
@@ -107,6 +103,7 @@ export const strings = {
     columnUserAgent: 'User agent',
     directVisit: 'Direct',
     unknownAgent: 'Unknown',
+    agentLabel: (browser: string, os: string) => `${browser} · ${os}`,
     previous: 'Previous',
     next: 'Next',
     pagePosition: (page: number) => `Page ${page + 1}`,
@@ -120,13 +117,7 @@ export const strings = {
   },
 
   errors: {
-    /**
-     * Shown when the request never reached the API - wrong base URL, backend down, or
-     * a cross-origin call the browser refused. Deliberately points at the API rather
-     * than blaming the user's input.
-     */
     network: 'Could not reach the API. Check that the backend is running.',
-    /** Fallback when the API failed without a message we can show. */
     unexpected: 'Something went wrong. Please try again.',
     auth: 'Please sign in to continue.',
     requiredUrl: 'Enter a URL to shorten.',

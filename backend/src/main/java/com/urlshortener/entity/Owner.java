@@ -42,7 +42,7 @@ public class Owner {
      * Creates a guest owner: no external identity provider is involved.
      */
     public static Owner guest() {
-        return new Owner("guest", null, null);
+        return new Owner(IdentityProvider.GUEST, null, null);
     }
 
     /**

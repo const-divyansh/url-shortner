@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 
+import com.urlshortener.auth.LinkAuthorizationPolicy;
 import com.urlshortener.config.AppProperties;
 import com.urlshortener.dto.AnalyticsResponse;
 import com.urlshortener.dto.OwnedUrlSummaryProjection;
@@ -44,7 +45,8 @@ class AnalyticsServiceTest {
     private ClickEventRepository clickRepository;
 
     private AnalyticsService service() {
-        return new AnalyticsService(urlRepository, clickRepository, new AppProperties(BASE_URL));
+        return new AnalyticsService(urlRepository, clickRepository, new LinkAuthorizationPolicy(),
+                new AppProperties(BASE_URL));
     }
 
     private void urlExists(Url url) {

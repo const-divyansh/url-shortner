@@ -11,7 +11,7 @@ BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 
 .DEFAULT_GOAL := help
-.PHONY: help setup up down reset dev api web build test test-api test-web clean logs psql redis-cli
+.PHONY: help setup env-check up down reset dev api web build test test-api test-web clean logs psql redis-cli
 
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -21,6 +21,30 @@ setup: ## Install frontend dependencies and create .env files from the examples
 	@cd $(FRONTEND_DIR) && npm install
 	@[ -f $(BACKEND_DIR)/.env ] || { cp $(BACKEND_DIR)/.env.example $(BACKEND_DIR)/.env && echo "created $(BACKEND_DIR)/.env"; }
 	@[ -f $(FRONTEND_DIR)/.env ] || { cp $(FRONTEND_DIR)/.env.example $(FRONTEND_DIR)/.env && echo "created $(FRONTEND_DIR)/.env"; }
+	@$(MAKE) --no-print-directory env-check
+
+# Reports keys added to an .env.example that are missing from the .env beside it.
+#
+# The copy above only runs when .env does not exist, so once created it never gains
+# keys introduced later. Those keys then fall back to their application.yml defaults
+# silently - the setting appears configurable, edits to .env.example look effective,
+# and nothing reports otherwise. This turns that into a visible message.
+#
+# Deliberately reports instead of merging: a real .env holds secrets and local edits,
+# and no convenience is worth a target that can rewrite it.
+env-check: ## Report config keys present in .env.example but missing from .env
+	@for dir in $(BACKEND_DIR) $(FRONTEND_DIR); do \
+		[ -f $$dir/.env ] || continue; \
+		missing=""; \
+		for key in $$(grep -hoE '^[A-Z_][A-Z0-9_]*=' $$dir/.env.example | tr -d '='); do \
+			grep -qE "^[[:space:]]*$$key=" $$dir/.env || missing="$$missing $$key"; \
+		done; \
+		if [ -n "$$missing" ]; then \
+			echo "WARNING: $$dir/.env is missing keys added to .env.example since it was created:"; \
+			for key in $$missing; do echo "    $$key"; done; \
+			echo "  These fall back to defaults. Copy the lines you need from $$dir/.env.example."; \
+		fi; \
+	done
 
 up: ## Start Postgres and Redis, and wait until both are healthy
 	@docker compose up -d
@@ -40,6 +64,7 @@ reset: ## Stop containers AND delete their data - destroys the local database
 	@docker compose down -v
 
 dev: up ## Start everything: containers, API, and frontend together
+	@$(MAKE) --no-print-directory env-check
 	@echo "API      http://localhost:8080"
 	@echo "Frontend http://localhost:5173"
 	@echo "Press Ctrl-C to stop both."
@@ -49,6 +74,7 @@ dev: up ## Start everything: containers, API, and frontend together
 		wait
 
 api: up ## Run only the API
+	@$(MAKE) --no-print-directory env-check
 	@cd $(BACKEND_DIR) && set -a && { [ -f .env ] && . ./.env; }; set +a && mvn spring-boot:run
 
 web: ## Run only the frontend dev server
