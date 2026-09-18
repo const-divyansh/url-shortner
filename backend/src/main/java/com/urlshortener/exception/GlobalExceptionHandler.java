@@ -2,6 +2,7 @@ package com.urlshortener.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,27 +22,41 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * Builds an error response with {@code Cache-Control: no-store}.
+     *
+     * <p>Without this, a browser is free to cache a {@code 404}/{@code 410}/{@code 409}
+     * on nothing more than heuristics, since none of these statuses carry an explicit
+     * caching directive by default. That is actively wrong here: a short code's state
+     * is not immutable. A deleted or expired code can be reclaimed by its owner (see
+     * {@code UrlService.releaseOwnReclaimableAlias}), at which point the same URL starts
+     * resolving again - but a browser holding a cached 410 for it will keep replaying
+     * that stale response indefinitely and never re-ask the server.
+     */
+    private static ResponseEntity<ErrorResponse> error(HttpStatus status, String code, String message) {
+        return ResponseEntity.status(status)
+                .cacheControl(CacheControl.noStore())
+                .body(ErrorResponse.of(code, message));
+    }
+
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ErrorResponse> handleValidation(ValidationException e) {
-        return ResponseEntity.badRequest().body(ErrorResponse.of(e.getCode(), e.getMessage()));
+        return error(HttpStatus.BAD_REQUEST, e.getCode(), e.getMessage());
     }
 
     @ExceptionHandler(AuthenticationRequiredException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationRequired(AuthenticationRequiredException e) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ErrorResponse.of("auth.required", e.getMessage()));
+        return error(HttpStatus.UNAUTHORIZED, "auth.required", e.getMessage());
     }
 
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationFailed(AuthenticationFailedException e) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ErrorResponse.of("auth.invalid", e.getMessage()));
+        return error(HttpStatus.UNAUTHORIZED, "auth.invalid", e.getMessage());
     }
 
     @ExceptionHandler(OwnershipForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleOwnershipForbidden(OwnershipForbiddenException e) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ErrorResponse.of("auth.forbidden", e.getMessage()));
+        return error(HttpStatus.FORBIDDEN, "auth.forbidden", e.getMessage());
     }
 
     @ExceptionHandler(GuestActionForbiddenException.class)
@@ -49,28 +64,24 @@ public class GlobalExceptionHandler {
         // 403 with its own code, not auth.forbidden: the caller does own the resource,
         // so telling them it is not theirs would be false. The distinct code also lets
         // the client offer the actual remedy - sign in with Google.
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ErrorResponse.of("auth.guest_forbidden", e.getMessage()));
+        return error(HttpStatus.FORBIDDEN, "auth.guest_forbidden", e.getMessage());
     }
 
     @ExceptionHandler(AliasUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleAliasTaken(AliasUnavailableException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of("alias.unavailable", e.getMessage()));
+        return error(HttpStatus.CONFLICT, "alias.unavailable", e.getMessage());
     }
 
     @ExceptionHandler(ShortCodeNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ShortCodeNotFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of("code.not_found", e.getMessage()));
+        return error(HttpStatus.NOT_FOUND, "code.not_found", e.getMessage());
     }
 
     @ExceptionHandler(ShortCodeExpiredException.class)
     public ResponseEntity<ErrorResponse> handleExpired(ShortCodeExpiredException e) {
         // 410, not 404: the link existed and is permanently finished. A 404 would
         // wrongly suggest it never existed.
-        return ResponseEntity.status(HttpStatus.GONE)
-                .body(ErrorResponse.of("code.expired", e.getMessage()));
+        return error(HttpStatus.GONE, "code.expired", e.getMessage());
     }
 
     @ExceptionHandler(ShortCodeDeletedException.class)
@@ -78,8 +89,7 @@ public class GlobalExceptionHandler {
         // Also 410: same "existed, now permanently finished" contract as expiry, just
         // a different cause - kept as a distinct exception/code so logs and API
         // consumers can tell the two apart.
-        return ResponseEntity.status(HttpStatus.GONE)
-                .body(ErrorResponse.of("code.deleted", e.getMessage()));
+        return error(HttpStatus.GONE, "code.deleted", e.getMessage());
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
@@ -91,6 +101,7 @@ public class GlobalExceptionHandler {
         // a flood would otherwise fill the log with the very traffic being rejected.
         log.debug("Rate limit exceeded", e);
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfter().toSeconds()))
                 .body(ErrorResponse.of("rate_limit.exceeded", e.getMessage()));
     }
@@ -104,9 +115,8 @@ public class GlobalExceptionHandler {
         // The exception text can quote the offending payload and internal type names,
         // so a fixed message is returned instead of echoing it back.
         log.debug("Unreadable request body", e);
-        return ResponseEntity.badRequest()
-                .body(ErrorResponse.of("request.malformed",
-                        "Request body is malformed or contains an invalid field value"));
+        return error(HttpStatus.BAD_REQUEST, "request.malformed",
+                "Request body is malformed or contains an invalid field value");
     }
 
     @ExceptionHandler(CodeGenerationException.class)
@@ -114,9 +124,8 @@ public class GlobalExceptionHandler {
         // Genuinely unexpected - logged at error level because it normally indicates a
         // generator defect rather than bad input.
         log.error("Short-code generation failed", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ErrorResponse.of("code.generation_failed",
-                        "Could not allocate a short code, please retry"));
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "code.generation_failed",
+                "Could not allocate a short code, please retry");
     }
 
     /**
@@ -127,8 +136,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoStaticResource(NoResourceFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of("resource.not_found", "No such resource"));
+        return error(HttpStatus.NOT_FOUND, "resource.not_found", "No such resource");
     }
 
     /**
@@ -138,7 +146,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
         log.error("Unhandled exception", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ErrorResponse.of("internal_error", "An unexpected error occurred"));
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "internal_error", "An unexpected error occurred");
     }
 }
