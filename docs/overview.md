@@ -91,7 +91,7 @@ Full rubric mapping (all 8 evaluation items):
   layering ahead of the app are scoped (Phase 2) but not implemented; the app-level
   rate limiter is deliberately designed to keep working standalone either way.
 - **Roles/scopes and editable link targets** — see
-  [`functionality.md`](./functionality.md#11-not-built) for the complete, current
+  [`functionality.md`](./functionality.md#11-not-built--phase-2) for the complete, current
   list with rationale for each.
 
 ## 7. Testing, limitations, trade-offs

@@ -5,7 +5,7 @@ visited, and see click statistics per code.
 
 **How to read this document**: every requirement below is tagged with its phase
 (**Phase 1** = built and live-verified; **Phase 2** = scoped, not yet built — see
-[functionality.md §11](./functionality.md#11-not-built) for the current "not built"
+[functionality.md §11](./functionality.md#11-not-built--phase-2) for the current "not built"
 boundary) and its current status. Full "why this and not that" reasoning lives in
 [decisions.md](./decisions.md); milestone-by-milestone build history lives in
 [plan.md](./plan.md). This page only answers "what was required, and where does it

@@ -225,9 +225,10 @@ difference between 403 and 404 to discover other people's short codes.
 
 ### Reclaiming your own alias
 
-A deleted alias stays claimed against everyone else, **but its original owner may reuse
-it.** The hijack risk that justifies retiring a code applies to a *different* party
-taking it; the same owner could point the link anywhere in the first place.
+A deleted or expired alias stays claimed against everyone else, **but its original
+owner may reuse it.** The hijack risk that justifies retiring a code applies to a
+*different* party taking it; the same owner could point the link anywhere in the
+first place.
 
 When an owner reclaims an alias, the previous link's **click history is discarded**.
 This is deliberate and lossy: those rows belong to the link that used to hold that code,
@@ -370,7 +371,7 @@ the redirect.
 Stated plainly so the boundary is not mistaken for an oversight. Phase 1 delivered
 correctness and security; **Phase 2 is the performance and scale story** — caching,
 scalability, and nginx at the edge. Scope is defined in
-[requirements.md](./requirements.md#phase-2-scope--performance-and-scale).
+[requirements.md](./requirements.md#phase-2-scope-in-detail).
 
 ### Caching — the main Phase 2 item
 Redis runs and is reported healthy, but **nothing caches the redirect lookup yet**.

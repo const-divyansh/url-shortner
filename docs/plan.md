@@ -98,7 +98,7 @@ postponed, see [decisions.md](./decisions.md))
 ### M6 — Auth + Link Deletion — *Phase 2 originally, pulled forward*
 **Status: Done** *(depends on M2, M4 — see [ADR-005](./decisions.md#adr-005--authentication))*
 - **Closes**: NFR4 (ownership boundary), plus link deletion — see
-  [Phase 2 scope](./requirements.md#phase-2-scope--caching--link-deletion)
+  [Phase 2 scope](./requirements.md#phase-2-scope-in-detail)
 - **Scoped as one unit**: deletion without an ownership boundary lets anyone remove
   anyone's link, so auth and delete shipped together rather than as separate
   milestones.
@@ -189,7 +189,7 @@ postponed, see [decisions.md](./decisions.md))
 - **Decisions**: Redis cache-aside in front of the redirect lookup; on cache miss or
   Redis outage, fall back to Postgres — a redirect must never fail because Redis is
   down. Must honour the
-  [design constraints](./requirements.md#design-constraints): a structured cached
+  [design constraints](./requirements.md#design-constraints---from-day-1): a structured cached
   record (not a bare URL string), versioned keys (`url:v1:{code}`), access behind an
   interface (never `RedisTemplate` in the service), and a bounded short TTL. Postgres
   `expires_at` stays the sole authority — `ttl = min(configured, untilExpiry)` — since

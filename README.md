@@ -6,11 +6,12 @@ A production-grade, highly scalable URL shortener service built with **Java 17**
 
 ## 🚀 Key Features & Architecture
 
-* **High Performance Redirects**: Ultra-fast URL resolution utilizing a **Redis** cache-aside layer in front of **PostgreSQL**.
-* **Resilient Architecture**: Automatic fallback to PostgreSQL canonical storage in the event of cache misses or Redis outages.
-* **Asynchronous Analytics**: Click events (timestamps, referrers, user agents) captured asynchronously via Spring `ApplicationEvent` listeners without adding latency to redirect execution.
-* **Security & SSRF Defense**: Input validation chain preventing SSRF (blocking localhost, private IP ranges, non-HTTP/HTTPS schemes) and IP privacy protection via salted cryptographic hashing.
-* **Extensible Short-Code Generation**: Pluggable code generation strategy using Base62 encoding with automated collision resolution.
+* **PostgreSQL as the sole source of truth**: every redirect reads through to Postgres. A Redis read-through cache in front of it is designed but deliberately deferred — see [Phase 2 scope](./docs/requirements.md) and `docs/plan.md`.
+* **Redis-backed rate limiting**: per-IP fixed-window limits on link creation and redirects (`RATELIMIT_*` env vars), fail-open if Redis is unavailable so an outage degrades to unlimited rather than an outage.
+* **Asynchronous Analytics**: Click events (timestamps, referrers, user agents) are buffered in Redis and drained to Postgres asynchronously via Spring `ApplicationEvent` listeners, without adding latency to the redirect itself.
+* **Security & SSRF Defense**: Input validation chain preventing SSRF (blocking localhost, private IP ranges, non-HTTP/HTTPS schemes) and IP privacy protection via salted cryptographic hashing — raw client IPs are never persisted.
+* **Extensible Short-Code Generation**: Pluggable code generation strategy (Base62 random or sequential) with automated collision resolution, switchable at runtime.
+* **API contract**: OpenAPI 3 spec generated from the live code — `/v3/api-docs` (JSON) and `/swagger-ui.html` (interactive UI), always in sync with the implementation.
 
 ---
 
@@ -21,7 +22,7 @@ A production-grade, highly scalable URL shortener service built with **Java 17**
 | **Language & Runtime** | Java 17 |
 | **Framework** | Spring Boot 3.3.4 (Spring MVC, Data JPA, Actuator) |
 | **Primary Database** | PostgreSQL |
-| **Caching & Buffering** | Redis |
+| **Caching & Buffering** | Redis (rate-limit counters, click-event buffer) |
 | **Database Migrations** | `schema.sql` 
 | **Build & Tooling** | Maven |
 | **Containerization** | Docker & Docker Compose |
@@ -80,6 +81,7 @@ make dev      # Postgres + Redis + API + frontend; Ctrl-C stops all of it
 | API | http://localhost:8080 |
 | Frontend | http://localhost:5173 |
 | Health | http://localhost:8080/actuator/health |
+| API docs (Swagger UI) | http://localhost:8080/swagger-ui.html |
 
 `make help` lists every target. The useful ones:
 
@@ -129,7 +131,9 @@ Copy each `.env.example` to `.env` (done for you by `make setup`) and edit as ne
 | `GET` | `/api/urls/{shortCode}/analytics` | Retrieve analytics & click statistics for an owned short link |
 | `GET` | `/api/shortcode/strategy` | Report the active short-code algorithm (requires a session) |
 | `PUT` | `/api/shortcode/strategy` | Switch the active algorithm **server-wide** (requires a session) |
-| `DELETE` | `/api/urls/{shortCode}` | *Phase 2* — deactivate a short URL (requires auth) |
+| `DELETE` | `/api/urls/{shortCode}` | Deactivate a short URL (requires auth; guests can only delete their own) |
+| `GET` | `/v3/api-docs` | Machine-readable OpenAPI 3 contract |
+| `GET` | `/swagger-ui.html` | Interactive API documentation |
 | `GET` | `/actuator/health` | Service health check status |
 
 ---
@@ -173,6 +177,7 @@ authenticate each request.
 * **IP Privacy**: Raw client IPs are never persisted. Analytics store salted hashes/truncated representations to preserve privacy (NFR8).
 * **SSRF Prevention**: URL validation blocks private IP ranges (`127.0.0.1`, `10.0.0.0/8`, `169.254.169.254`), non-routable hosts, and unsafe URI schemes.
 * **Injection Defense**: Strictly parameterized JPA queries preventing SQL injection.
+* **Rate Limiting**: Per-IP fixed-window limits on `POST /api/urls` and `GET /{shortCode}` (`RATELIMIT_CREATE_LIMIT`/`RATELIMIT_REDIRECT_LIMIT` in `.env`), returning `429` with a `Retry-After` hint once exhausted.
 
 ---
 
@@ -180,8 +185,9 @@ authenticate each request.
 
 For detailed architectural decisions, requirements breakdown, and engineering roadmap, consult the [docs/](./docs) directory:
 
-* [Q&A — Start Here](./docs/qa/00-overview.md)
+* [Project Overview — Start Here](./docs/overview.md)
 * [Functionality & API Reference](./docs/functionality.md)
+* [High-Level Design (diagrams)](./docs/HighLevelDesign.md)
 * [AI-Assisted Engineering Process](./docs/process/README.md)
 * [Requirements & Phase Plan](./docs/requirements.md)
 * [Implementation Plan & Milestones](./docs/plan.md)
