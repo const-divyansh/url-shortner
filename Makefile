@@ -11,7 +11,7 @@ BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 
 .DEFAULT_GOAL := help
-.PHONY: help setup env-check up down reset dev api web build test test-api test-web clean logs psql redis-cli
+.PHONY: help setup env-check up down reset dev api web build test test-api test-web e2e clean logs psql redis-cli
 
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -91,6 +91,60 @@ test-api: ## Run the backend test suite
 
 test-web: ## Type-check and lint the frontend
 	@cd $(FRONTEND_DIR) && npm run check
+
+e2e: up ## Run the Playwright suite against the live stack
+	@$(MAKE) --no-print-directory env-check
+	@set -euo pipefail; \
+		api_started=0; \
+		api_boot_pid=""; \
+		api_listener_pid=""; \
+		api_log="$(BACKEND_DIR)/target/e2e-api.log"; \
+		echo "clearing Redis-backed create-rate-limit state"; \
+		docker compose exec -T redis redis-cli --raw EVAL "local keys = redis.call('keys', ARGV[1]); if #keys > 0 then return redis.call('del', unpack(keys)) end; return 0" 0 'ratelimit:v1:*' >/dev/null; \
+		if ! curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then \
+			echo "starting API on http://localhost:8080"; \
+			mkdir -p $(BACKEND_DIR)/target; \
+			rm -f "$$api_log"; \
+			( cd $(BACKEND_DIR) && set -a && { [ -f .env ] && . ./.env; }; set +a && mvn -q spring-boot:run > target/e2e-api.log 2>&1 ) & \
+			api_boot_pid=$$!; \
+			api_started=1; \
+		else \
+			echo "API already running on http://localhost:8080"; \
+		fi; \
+		cleanup() { \
+			if [ "$$api_started" = "1" ]; then \
+				if [ -n "$$api_listener_pid" ]; then \
+					kill $$api_listener_pid 2>/dev/null || true; \
+				elif [ -n "$$api_boot_pid" ]; then \
+					kill $$api_boot_pid 2>/dev/null || true; \
+				fi; \
+				if [ -n "$$api_boot_pid" ]; then \
+					wait $$api_boot_pid 2>/dev/null || true; \
+				fi; \
+				rm -f "$$api_log"; \
+			fi; \
+		}; \
+		trap cleanup EXIT INT TERM; \
+		printf "waiting for API"; \
+		for i in $$(seq 1 90); do \
+			if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then \
+				if [ "$$api_started" = "1" ]; then \
+					api_listener_pid=$$(lsof -t -nP -iTCP:8080 -sTCP:LISTEN | head -n 1); \
+				fi; \
+				echo " ok"; \
+				break; \
+			fi; \
+			if [ "$$i" = "90" ]; then \
+				echo " timed out"; \
+				if [ -f "$$api_log" ]; then \
+					tail -n 40 "$$api_log"; \
+				fi; \
+				exit 1; \
+			fi; \
+			printf "."; \
+			sleep 1; \
+		done; \
+		cd $(FRONTEND_DIR) && npm run e2e
 
 logs: ## Tail container logs
 	@docker compose logs -f

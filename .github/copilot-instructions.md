@@ -27,6 +27,26 @@ Every task in this repo follows this loop — do not skip steps:
    starts/finishes. Add new milestones there (with rationale in `docs/decisions.md`)
    instead of tracking scope changes only in chat.
 
+## Documentation Style
+Docs, comments, and commit messages describe the **system**, not the process that
+produced them. Write as an engineer describing their own work, not an AI narrating
+its own diligence.
+- No self-referential process narration: avoid phrases like "found during this
+  session", "audited honestly", "flagged rather than hidden", "not just assumed",
+  "caught by a simple question". State the fact plainly instead (e.g. "IPv4/IPv6
+  loopback addresses previously counted as separate rate-limit buckets" not "a real
+  defect was found during testing this session").
+- No editorializing about the AI's own rigor or honesty. Confidence and thoroughness
+  should be evident from the content (verified claims, concrete numbers, cross-links),
+  never asserted about itself.
+- Session-scoped language ("this session", "this exercise", "as of this document")
+  belongs in `memories/repo/traceability-log.md`, never in `docs/` or code comments —
+  those must read the same whether written yesterday or a year ago.
+- Prefer plain factual statements over meta-commentary on why a statement is written
+  the way it is, unless the reasoning is itself an engineering decision worth
+  recording (which belongs in `docs/decisions.md`, phrased as a decision, not a
+  narrative of how it was discovered).
+
 ## Architecture
 Monorepo: `backend/` (Java API) and `frontend/` (React client) side by side, with
 shared `docs/` and a root `Makefile` that orchestrates both. Maven commands must be

@@ -92,6 +92,18 @@ make build       # API jar + frontend bundle
 make psql        # shell into the dev database
 make down        # stop containers, keep data
 make reset       # stop containers AND delete data
+make clean       # remove build output (backend target/, frontend dist/)
+```
+
+Starting completely from scratch (fresh database, fresh dependencies, no leftover
+build output):
+
+```bash
+make reset    # stop containers, delete Postgres/Redis volumes
+make clean    # remove backend target/ and frontend dist/
+rm -rf frontend/node_modules backend/.env frontend/.env
+make setup    # reinstall frontend deps, recreate .env files
+make dev
 ```
 
 ### Configuration
@@ -168,7 +180,8 @@ authenticate each request.
 
 For detailed architectural decisions, requirements breakdown, and engineering roadmap, consult the [docs/](./docs) directory:
 
-* [Q&A — start here](./docs/qa/00-overview.md)
+* [Q&A — Start Here](./docs/qa/00-overview.md)
+* [Functionality & API Reference](./docs/functionality.md)
 * [AI-Assisted Engineering Process](./docs/process/README.md)
 * [Requirements & Phase Plan](./docs/requirements.md)
 * [Implementation Plan & Milestones](./docs/plan.md)

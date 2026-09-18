@@ -75,7 +75,7 @@ since they describe work not yet started.
 - **Trade-off accepted**: doesn't demonstrate orchestration-at-scale; explicitly out of
   scope for this exercise.
 
-## ADR-004: Design principles — SOLID + specific patterns
+## ADR-004: Design principles — SOLID + Specific Patterns
 - **Chosen patterns**: Strategy (short-code generation), Repository (persistence),
   Cache-Aside (Redis), Observer (click analytics via Spring events), Chain of
   Responsibility (request validation), Facade (service layer), Factory Method
@@ -102,7 +102,7 @@ since they describe work not yet started.
   (Redis cache-aside on the redirect lookup, see ADR-002) exists — we absorb the load
   through caching the lookup, not by sacrificing analytics correctness.
 
-## ADR-007: Short-code generation — random Base62, resolved by the database's unique constraint
+## ADR-007: Short-code generation — random Base62, Resolved by the Database's Unique Constraint
 - **Reference**: [ByteByteGo — Design a URL Shortener](https://bytebytego.com/courses/system-design-interview/design-a-url-shortener),
   "Hash function" section, Table 3.
 - **Considered** (the reference presents the first two; we use a third):
@@ -126,7 +126,7 @@ since they describe work not yet started.
 - **Code length**: 7 characters (`[0-9a-zA-Z]`) — `62^7 ≈ 3.5 trillion`, matching the
   reference's sizing.
 
-### Collision handling: insert-and-catch, not check-then-insert
+### Collision handling: Insert-and-Catch, Not Check-Then-Insert
 - **Chosen**: attempt the insert and treat a violation of the named unique constraint
   `urls_short_code_key` as the collision signal, retrying with an incremented attempt
   counter (bounded at 5).
@@ -148,7 +148,7 @@ since they describe work not yet started.
   100M rows is ~10⁻²³. It is a circuit breaker, so a generator that violates the
   vary-by-attempt contract fails loudly instead of looping forever.
 
-### Multiple strategies, switchable at runtime
+### Multiple strategies, Switchable at Runtime
 - **Chosen**: ship `base62-random` (default) and `hash-url`, selected by
   `app.shortcode.strategy` and switchable at runtime via `ShortCodeGeneratorFactory`
   (Factory Method).
@@ -176,7 +176,7 @@ since they describe work not yet started.
   is unauthenticated and local; must be secured alongside M6 auth before any real
   deployment.
 
-## ADR-008: Schema migrations — plain `schema.sql`, no migration framework
+## ADR-008: Schema migrations — plain `schema.sql`, No Migration Framework
 - **Considered**: Flyway, Liquibase, Hibernate `ddl-auto: update`, plain `schema.sql`
 - **Chosen**: a committed `backend/src/main/resources/schema.sql` executed by Spring Boot's SQL
   init, paired with `spring.jpa.hibernate.ddl-auto: validate`.
@@ -203,7 +203,7 @@ since they describe work not yet started.
   style when it writes the first DDL. If this project ever grows real data or multiple
   environments, revisit this ADR: that is the point at which Flyway starts earning its keep.
 
-## ADR-009: No URL deduplication — every request mints a new code
+## ADR-009: No URL deduplication — Every Request Mints a New Code
 - **Considered**: return the existing code for a previously-seen URL (the reference's
   behaviour), versus always issuing a new one.
 - **Chosen**: always issue a new code. The same URL submitted twice yields two
@@ -270,7 +270,7 @@ since they describe work not yet started.
   table, the transactional unit must be introduced *inside* an attempt, never around the
   loop.
 
-## ADR-012: Validation posture — one chain, allow-lists, fail closed
+## ADR-012: Validation posture — One chain, Allow-lists, Fail Closed
 - **All rules live in the validation chain; no bean-validation annotations on DTOs.**
   Splitting rules between annotations and the chain would let the two drift and would
   produce two differently-shaped 400 responses. One location, one error format.
